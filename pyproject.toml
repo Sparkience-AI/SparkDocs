@@ -11,6 +11,7 @@ requires-python = ">=3.11,<3.14"
 license = { file = "LICENSE" }
 authors = [{ name = "Nitin Sagar" }]
 dependencies = [
+  "fastembed>=0.8,<1",
   "langchain-core>=0.2.28,<2",
   "langchain-google-genai>=1.0.8,<4",
   "pymupdf>=1.24,<2",

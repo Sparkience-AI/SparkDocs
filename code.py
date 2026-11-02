@@ -8,6 +8,7 @@ import streamlit as st
 from sparkdocs.errors import SparkDocsError
 from sparkdocs.ingestion import UploadPolicy, ingest_upload
 from sparkdocs.providers import GeminiProvider
+from sparkdocs.retrieval import FastEmbedDense, FastEmbedReranker, HybridRetriever, build_index
 from sparkdocs.service import DocumentQuestionService
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -15,8 +16,23 @@ UPLOAD_POLICY = UploadPolicy()
 
 
 def clear_session() -> None:
-    for key in ("sparkdocs_api_key", "sparkdocs_document", "sparkdocs_upload_digest"):
+    for key in (
+        "sparkdocs_api_key",
+        "sparkdocs_document",
+        "sparkdocs_index",
+        "sparkdocs_upload_digest",
+    ):
         st.session_state.pop(key, None)
+
+
+@st.cache_resource(show_spinner=False)
+def dense_model() -> FastEmbedDense:
+    return FastEmbedDense()
+
+
+@st.cache_resource(show_spinner=False)
+def reranker_model() -> FastEmbedReranker:
+    return FastEmbedReranker()
 
 
 st.set_page_config(layout="wide", page_title="SparkDocs", page_icon="📄")
@@ -26,10 +42,11 @@ st.markdown(
 )
 
 st.title("SparkDocs")
-st.caption("Alpha · local-first bounded document ingestion and experimental grounded Q&A")
+st.caption("Alpha · local-first hybrid RAG with grounded, source-located citations")
 st.info(
-    "Uploads stay in this Streamlit session. Questions and selected document excerpts are sent "
-    "to Google Gemini using your key. Do not upload confidential or regulated documents."
+    "Documents are indexed locally with dense embeddings, BM25, RRF, and a cross-encoder reranker. "
+    "The local models download once on first use and are cached on this machine. Only retrieved "
+    "excerpts and your question are sent to Gemini using your key."
 )
 
 with st.sidebar:
@@ -61,27 +78,42 @@ if uploaded_file is not None:
             )
         except SparkDocsError as exc:
             st.session_state.pop("sparkdocs_document", None)
+            st.session_state.pop("sparkdocs_index", None)
             st.error(str(exc))
         else:
-            st.session_state.sparkdocs_document = ingested_document
-            st.session_state.sparkdocs_upload_digest = digest_key
+            try:
+                with st.spinner("Building the local hybrid retrieval index..."):
+                    index = build_index(ingested_document, dense_model())
+            except Exception:
+                st.error(
+                    "The local retrieval models could not be initialized. Check network access "
+                    "for the first model download, available disk space, and try again."
+                )
+            else:
+                st.session_state.sparkdocs_document = ingested_document
+                st.session_state.sparkdocs_index = index
+                st.session_state.sparkdocs_upload_digest = digest_key
 
 document = st.session_state.get("sparkdocs_document")
-if document is not None:
+index = st.session_state.get("sparkdocs_index")
+if document is not None and index is not None:
     st.success(
         f"Ready: {document.kind.upper()} · {len(document.sections)} sections · "
         f"{document.character_count:,} extracted characters"
     )
     st.caption(
-        "Extraction is bounded and memory-only. Retrieval is currently basic lexical matching; "
-        "answers and citations require user verification."
+        f"Indexed {len(index.chunks)} structure-aware chunks in memory. Answers must cite only "
+        "retrieved locations; citations still require user verification."
     )
     question = st.text_input("Question about this document", max_chars=2_000)
     if st.button("Ask SparkDocs", disabled=not bool(api_key and question.strip())):
         try:
-            service = DocumentQuestionService(GeminiProvider(api_key))
-            with st.spinner("Selecting evidence and generating one grounded answer..."):
-                result = service.answer(document, question)
+            service = DocumentQuestionService(
+                GeminiProvider(api_key),
+                HybridRetriever(dense_model(), reranker_model()),
+            )
+            with st.spinner("Running hybrid retrieval, reranking, and grounded generation..."):
+                result = service.answer(index, question)
         except (SparkDocsError, ValueError) as exc:
             st.error(str(exc))
         except Exception:
@@ -90,6 +122,7 @@ if document is not None:
             st.markdown(result.answer)
             with st.expander("Evidence locations sent to the model"):
                 for locator in result.evidence_locators:
-                    st.write(f"- {locator}")
+                    marker = "cited" if locator in result.cited_locators else "retrieved"
+                    st.write(f"- {locator} ({marker})")
 elif uploaded_file is None:
     st.write("Upload a supported document to begin. No shared passkey is required.")

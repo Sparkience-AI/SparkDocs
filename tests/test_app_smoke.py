@@ -8,6 +8,8 @@ def test_app_entry_point_compiles_without_shared_passkey() -> None:
     compile(APP_SOURCE, "code.py", "exec")
     assert "SparkDocs" in APP_SOURCE
     assert "file_uploader" in APP_SOURCE
+    assert "HybridRetriever" in APP_SOURCE
+    assert "build_index" in APP_SOURCE
     assert 'st.text_input("Passkey"' not in APP_SOURCE
     assert "shared_password" not in APP_SOURCE
 

@@ -12,8 +12,10 @@ Every upload and every extracted string is untrusted input.
 - PDF page count, PPTX slide count, normalized section count, and extracted characters are bounded.
 - Original bytes remain in memory; no temporary upload path is created.
 - A failed evidence search abstains instead of transmitting the entire document.
-- Selected evidence and model responses have separate character limits.
+- Hybrid dense/BM25 retrieval, RRF fusion, and local cross-encoder reranking operate on bounded
+  candidates; selected evidence and model responses have separate character limits.
 - Document text, locators, and questions are escaped, delimited, and labeled untrusted in the model prompt.
+- Model-returned citation labels must match the exact locators of evidence included in that prompt.
 - The provider receives no tools and has no filesystem, browser, or mutation authority.
 
 ## Known limitations
@@ -21,12 +23,13 @@ Every upload and every extracted string is untrusted input.
 - PDF and OOXML parsers run in the Streamlit process. There is not yet an operating-system sandbox,
   worker process, hard memory limit, or hard wall-clock timeout.
 - Signature and archive checks are not malware scanning or content disarm and reconstruction.
-- The current lexical evidence selector and model-generated citations are not independently verified.
+- Retrieval and reranking improve evidence selection but do not guarantee recall. Citation labels are
+  allowlisted, but claim-level support and entailment are not independently verified.
 - Streamlit session isolation and hosting-platform memory behavior remain part of the deployment trust
   boundary.
 
 Do not use SparkDocs alpha for hostile or high-value documents. Parser isolation, cancellation,
-malicious-document evaluation, and citation verification are Wave 3 release gates.
+malicious-document evaluation, and claim-level citation verification remain release gates.
 
 Report vulnerabilities privately using the Sparkience security-reporting process. Never attach an
 active exploit, private document, or credential to a public issue.

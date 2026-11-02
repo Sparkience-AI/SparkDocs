@@ -1,6 +1,6 @@
 # SparkDocs
 
-SparkDocs is an alpha, local-first PDF/DOCX/PPTX ingestion and experimental grounded Q&A tool.
+SparkDocs is an alpha, local-first PDF/DOCX/PPTX ingestion and grounded Q&A tool.
 
 Authoritative documentation:
 - README.md: product purpose, installation, limits, and non-goals
@@ -10,7 +10,10 @@ Authoritative documentation:
 
 Important limitations:
 - Q&A currently uses Google Gemini with a user-supplied key.
-- Retrieval is provisional lexical matching, and citations are not independently verified.
+- Retrieval uses local dense embeddings plus BM25, RRF fusion, and local cross-encoder reranking.
+- Citation labels are restricted to retrieved locations, but claim-level support is not independently verified.
+- FastEmbed model weights download and cache on first use; only bounded retrieved excerpts and the
+  question are sent to Gemini.
 - Parsers are bounded but still execute in-process without an OS sandbox or hard timeout.
 - Do not describe SparkDocs alpha as suitable for confidential, regulated, or adversarial documents.
 - No Agent Skill or MCP integration is currently supported.

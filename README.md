@@ -1,13 +1,15 @@
 # SparkDocs
 
-**Status: alpha.** SparkDocs is a local-first document ingestion and experimental grounded Q&A
+**Status: alpha.** SparkDocs is a local-first document ingestion and grounded Q&A
 tool for PDF, DOCX, and PPTX files. It is intended for people who want to inspect ordinary
 documents with an explicit bring-your-own-key model rather than upload them to a managed document
 store.
 
-SparkDocs currently validates and extracts documents in memory, selects a small amount of evidence
-with deterministic lexical matching, and makes one Gemini request. It does **not** yet provide a
-production retrieval system or independently verified citations.
+SparkDocs validates and extracts documents in memory, builds structure-aware overlapping chunks,
+and retrieves evidence locally using dense embeddings plus BM25 keyword search. Reciprocal rank
+fusion (RRF) combines those results, a local cross-encoder reranks them, and only a bounded evidence
+set is sent in one Gemini request. Returned citation labels are restricted to retrieved locations;
+SparkDocs does not independently prove that every generated claim is entailed by its citation.
 
 ## What it does
 
@@ -16,6 +18,8 @@ production retrieval system or independently verified citations.
 - Limits archive members, expanded size, compression ratio, pages/slides, sections, and extracted
   characters.
 - Preserves PDF page, DOCX paragraph/table-row, and PPTX slide locators.
+- Uses local FastEmbed ONNX models for dense retrieval and cross-encoder reranking.
+- Applies a strict evidence budget and rejects citations outside the retrieved-location allowlist.
 - Keeps uploads and extracted content in the active Streamlit process memory only.
 - Sends only character-bounded selected evidence and the escaped question to Gemini using the key entered for the session.
 - Treats document content as untrusted data and does not give it tools or external authority.
@@ -38,6 +42,8 @@ Prerequisites:
 - Python 3.11, 3.12, or 3.13
 - [uv](https://docs.astral.sh/uv/)
 - A Google Gemini API key for Q&A; ingestion and tests do not need a key
+- Network access on first interactive use to download the local embedding and reranking model
+  weights; subsequent runs use the local model cache
 
 ```bash
 git clone https://github.com/Sparkience-AI/SparkDocs.git
@@ -49,8 +55,10 @@ uv run --locked streamlit run code.py
 Open <http://127.0.0.1:8501>, enter a Google API key in the password field, and upload one supported
 document. The committed local configuration binds Streamlit to loopback and disables Streamlit
 usage reporting. The key is passed directly to a session-owned Gemini client; it is not copied into
-the process environment or written to disk. A hosted deployment must explicitly override the local
-server address and should retain the restricted demo contract below.
+the process environment or written to disk. FastEmbed downloads model weights from Hugging Face on
+first use and caches them locally; document text is not sent for embedding or reranking. A hosted
+deployment must explicitly override the local server address and should retain the restricted demo
+contract below.
 
 ## Hosted demo
 
@@ -92,8 +100,11 @@ Streamlit UI
     ├── bounded upload validation and extraction
     │       └── normalized document sections with source locators
     │
-    └── provisional lexical evidence selector
-            └── one grounded provider request
+    ├── structure-aware overlapping chunks
+    │       └── local dense + BM25 retrieval → RRF → cross-encoder reranking
+    │
+    └── bounded, escaped evidence prompt
+            └── one grounded provider request + citation allowlist validation
 ```
 
 The shared core lives under `src/sparkdocs`; the current Streamlit UI remains the source-checkout

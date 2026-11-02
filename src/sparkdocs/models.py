@@ -19,6 +19,24 @@ class Section:
 
 
 @dataclass(frozen=True, slots=True)
+class Chunk:
+    """A retrieval unit that preserves its human-verifiable source locator."""
+
+    chunk_id: str
+    locator: str
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentIndex:
+    """Ephemeral dense index for one ingested document."""
+
+    document_sha256: str
+    chunks: tuple[Chunk, ...]
+    embeddings: tuple[tuple[float, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class IngestedDocument:
     """Ephemeral normalized representation of one validated upload."""
 

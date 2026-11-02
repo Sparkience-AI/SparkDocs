@@ -15,8 +15,13 @@ SparkDocs is local-first, but its current Q&A provider is Google Gemini.
 ## Provider transmission
 
 When the user asks a question, SparkDocs sends the question, the application-owned grounded-answer
-instructions, and up to six lexically selected document sections to Google. Google processing and
-retention are governed by the user's account and Google's applicable terms.
+instructions, and a character-bounded set of locally retrieved excerpts to Google. Google processing
+and retention are governed by the user's account and Google's applicable terms.
+
+Dense embedding and cross-encoder reranking run locally through FastEmbed. Their model weights are
+downloaded from Hugging Face on first use and cached by FastEmbed. Document text is processed by
+those local models and is not sent to Hugging Face for inference. The model cache can persist after
+the Streamlit session ends, but SparkDocs does not intentionally put document content in that cache.
 
 The API key is passed directly to a session-owned client. SparkDocs does not copy it into environment
 variables, URLs, logs, caches, or files.
