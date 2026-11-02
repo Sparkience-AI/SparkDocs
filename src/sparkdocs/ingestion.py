@@ -162,9 +162,7 @@ def _validate_signature(content: bytes, spec: FormatSpec, policy: UploadPolicy) 
 def _extract_pdf(content: bytes, policy: UploadPolicy) -> tuple[Section, ...]:
     collector = _SectionCollector(policy)
     try:
-        with pymupdf.open(  # type: ignore[no-untyped-call]
-            stream=content, filetype="pdf"
-        ) as document:
+        with pymupdf.open(stream=content, filetype="pdf") as document:
             if document.needs_pass:
                 raise UploadRejectedError("Password-protected PDFs are not supported.")
             if document.page_count > policy.max_pdf_pages:
