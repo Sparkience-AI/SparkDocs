@@ -1,0 +1,16 @@
+# SparkDocs
+
+SparkDocs is an alpha, local-first PDF/DOCX/PPTX ingestion and experimental grounded Q&A tool.
+
+Authoritative documentation:
+- README.md: product purpose, installation, limits, and non-goals
+- docs/privacy.md: local, hosted, credential, and provider data handling
+- docs/security.md: trust boundaries, implemented controls, and known gaps
+- docs/architecture.md: module responsibilities and enforced resource limits
+
+Important limitations:
+- Q&A currently uses Google Gemini with a user-supplied key.
+- Retrieval is provisional lexical matching, and citations are not independently verified.
+- Parsers are bounded but still execute in-process without an OS sandbox or hard timeout.
+- Do not describe SparkDocs alpha as suitable for confidential, regulated, or adversarial documents.
+- No Agent Skill or MCP integration is currently supported.

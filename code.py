@@ -1,159 +1,95 @@
+"""Streamlit entry point for the SparkDocs alpha."""
+
+from hashlib import sha256
+from pathlib import Path
+
 import streamlit as st
-import os
-import fitz  # PyMuPDF
-from pptx import Presentation  # For handling PPTX files
-import docx  # For handling DOCX files
-from langchain_core.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-import re
 
-# Define the correct passkey
-correct_passkey = "godsparky1237"  # Replace with your actual passkey
+from sparkdocs.errors import SparkDocsError
+from sparkdocs.ingestion import UploadPolicy, ingest_upload
+from sparkdocs.providers import GeminiProvider
+from sparkdocs.service import DocumentQuestionService
 
-# Function to read a PDF file and extract its text content
-def read_pdf(file):
-    doc = fitz.open(stream=file.read(), filetype="pdf")
-    text = ""
-    for page in doc:
-        text += page.get_text()
-    return text
+APP_ROOT = Path(__file__).resolve().parent
+UPLOAD_POLICY = UploadPolicy()
 
-# Function to read a PPTX file and extract its text content
-def read_pptx(file):
-    presentation = Presentation(file)
-    text = ""
-    for slide in presentation.slides:
-        for shape in slide.shapes:
-            if hasattr(shape, "text"):
-                text += shape.text + "\n"
-    return text
 
-# Function to read a DOCX file and extract its text content
-def read_docx(file):
-    doc = docx.Document(file)
-    text = ""
-    for paragraph in doc.paragraphs:
-        text += paragraph.text + "\n"
-    return text
+def clear_session() -> None:
+    for key in ("sparkdocs_api_key", "sparkdocs_document", "sparkdocs_upload_digest"):
+        st.session_state.pop(key, None)
 
-# Function to split text into smaller chunks
-def split_text(text, chunk_size=5000000, chunk_overlap=100):
-    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    return splitter.split_text(text)
 
-# Function to ask a question and get a response
-def ask_question(question, text_chunks, google_api_key):
-    # Initialize the model with the provided API key
-    model = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
-    
-    # Clean question for keywords extraction
-    cleaned_question = re.sub(r'[^\w\s]', '', question.lower())
-    keywords = cleaned_question.split()
-    
-    # Filter relevant text chunks based on keywords
-    relevant_chunks = []
-    for chunk in text_chunks:
-        chunk_lower = chunk.lower()
-        if any(keyword in chunk_lower for keyword in keywords):
-            relevant_chunks.append(chunk)
-    
-    # If no relevant chunks found, use all chunks
-    if not relevant_chunks:
-        relevant_chunks = text_chunks
-    
-    # Prepare prompts and get responses
-    prompt_template = (
-        "system: You are an outstanding AI tutor known for your expertise and clarity. Your role is to assist students by providing clear, concise, and comprehensive answers to their assignment questions using the provided content from the uploaded document. Use your extensive knowledge only if necessary.\n"
-        "user: Context: {context}\n\n"
-        "Question: {question}\n\n"
-        "assistant: \n"
-        "Your answers should be:\n"
-        "- Well-structured\n"
-        "- Very detailed\n"
-        "- Comprehensive for the topic\n"
-        "- contain short and easy code snippets if needed in context to the topic of the document"
-        "- Include relevant examples\n"
-        "- Easy to understand for everyone\n"
-        "- Free of any repetitive content and unnecessary length\n"
-        "- Appropriate for an undergrad engineering AI and Data Science student\n"
-        "Begin the answer by writing the question and then the answer"
-        "Provide a clear, concise and comprehensive answer based on the PDF context"
+st.set_page_config(layout="wide", page_title="SparkDocs", page_icon="📄")
+st.markdown(
+    f"<style>{(APP_ROOT / 'style.css').read_text(encoding='utf-8')}</style>",
+    unsafe_allow_html=True,
+)
+
+st.title("SparkDocs")
+st.caption("Alpha · local-first bounded document ingestion and experimental grounded Q&A")
+st.info(
+    "Uploads stay in this Streamlit session. Questions and selected document excerpts are sent "
+    "to Google Gemini using your key. Do not upload confidential or regulated documents."
+)
+
+with st.sidebar:
+    st.subheader("Session controls")
+    api_key = st.text_input("Google API key", type="password", key="sparkdocs_api_key")
+    if st.button("Clear document and API key", use_container_width=True):
+        clear_session()
+        st.rerun()
+    st.caption(
+        "The API key is passed directly to a session-owned client and is not written to disk."
     )
-    
-    full_response = []
 
-    
-    for chunk in relevant_chunks:
-        prompt = prompt_template.format(context=chunk, question=question)
-            
-        message = HumanMessage(content=prompt)
-        response = model.stream([message])
-        
-        response_texts = [chunk.content for chunk in response]
-        full_response.extend(response_texts)
-    
-    return ''.join(full_response)
+uploaded_file = st.file_uploader(
+    "Upload one PDF, DOCX, or PPTX document",
+    type=["pdf", "docx", "pptx"],
+    help="Maximum upload: 10 MiB. Expanded OOXML content and extracted text have separate limits.",
+)
 
-st.set_page_config(layout="wide", page_title="SparkDocs", page_icon=":robot_face:")  # Set app to wide mode and customize title and icon
-
-# Load custom CSS for styling
-with open("style.css") as css:
-    st.markdown(f'<style>{css.read()}</style>', unsafe_allow_html=True)
-
-# Authentication section
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-
-if not st.session_state.authenticated:
-    st.title("Welcome to SparkDocs")
-
-    # Add an input field for the user to enter the passkey
-    passkey = st.text_input("🚀 Ready to dive into document analysis? Authenticate with the passkey (hint: it's definitely not 'password123' 😜)", type="password")
-    
-    # Check if the passkey matches the correct_passkey
-    if st.button("Submit"):
-        if passkey == correct_passkey:
-            st.session_state.authenticated = True
-            st.success("Authentication successful! Welcome aboard! 🎉")
-            st.rerun()  # Refresh the app to show the main content
+if uploaded_file is not None:
+    content = uploaded_file.getvalue()
+    digest_key = (uploaded_file.name, uploaded_file.type, sha256(content).hexdigest())
+    if st.session_state.get("sparkdocs_upload_digest") != digest_key:
+        try:
+            ingested_document = ingest_upload(
+                filename=uploaded_file.name,
+                claimed_media_type=uploaded_file.type,
+                content=content,
+                policy=UPLOAD_POLICY,
+            )
+        except SparkDocsError as exc:
+            st.session_state.pop("sparkdocs_document", None)
+            st.error(str(exc))
         else:
-            st.error("Authentication failed. Please enter a valid passkey. 🛑")
-    
-    st.image("cool logo.png", width=600, caption="Developed by Sparky Labs")
+            st.session_state.sparkdocs_document = ingested_document
+            st.session_state.sparkdocs_upload_digest = digest_key
 
-else:
-    # Input for API key
-    api_key = st.text_input("Enter your Google API key", type="password")
-
-    if not api_key:
-        st.warning("Please enter your API key to continue.")
-    else:
-        # Now you can proceed with your app content here
-        st.title("SparkDocs")
-        st.subheader("AI-Powered Document Q&A System")
-        st.write("Upload a PDF, PPTX, or DOCX file, ask questions, and get answers in context with the document content.")
-
-        uploaded_file = st.file_uploader("Upload Document", type=["pdf", "pptx", "docx"])
-
-        if uploaded_file is not None:
-            file_type = uploaded_file.type
-            if file_type == "application/pdf":
-                doc_text = read_pdf(uploaded_file)
-            elif file_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-                doc_text = read_pptx(uploaded_file)
-            elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                doc_text = read_docx(uploaded_file)
-            else:
-                st.error("Unsupported file type!")
-                doc_text = ""
-            
-            if doc_text:
-                text_chunks = split_text(doc_text)
-                
-                question = st.text_input("Enter your question:")
-                
-                if st.button("Ask"):
-                    with st.spinner("Processing..."):
-                        answer = ask_question(question, text_chunks, api_key)
-                        st.markdown(answer)
+document = st.session_state.get("sparkdocs_document")
+if document is not None:
+    st.success(
+        f"Ready: {document.kind.upper()} · {len(document.sections)} sections · "
+        f"{document.character_count:,} extracted characters"
+    )
+    st.caption(
+        "Extraction is bounded and memory-only. Retrieval is currently basic lexical matching; "
+        "answers and citations require user verification."
+    )
+    question = st.text_input("Question about this document", max_chars=2_000)
+    if st.button("Ask SparkDocs", disabled=not bool(api_key and question.strip())):
+        try:
+            service = DocumentQuestionService(GeminiProvider(api_key))
+            with st.spinner("Selecting evidence and generating one grounded answer..."):
+                result = service.answer(document, question)
+        except (SparkDocsError, ValueError) as exc:
+            st.error(str(exc))
+        except Exception:
+            st.error("The model request failed. Check the key, connection, quota, and try again.")
+        else:
+            st.markdown(result.answer)
+            with st.expander("Evidence locations sent to the model"):
+                for locator in result.evidence_locators:
+                    st.write(f"- {locator}")
+elif uploaded_file is None:
+    st.write("Upload a supported document to begin. No shared passkey is required.")
