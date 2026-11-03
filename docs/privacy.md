@@ -15,8 +15,9 @@ Gemini, OpenAI, or Anthropic Claude cloud provider.
 
 ## Provider transmission
 
-When the user asks a question, SparkDocs sends the question, the application-owned grounded-answer
-instructions, and a character-bounded set of locally retrieved excerpts to the selected provider.
+Only after the user checks the provider-specific transmission confirmation and asks a question,
+SparkDocs sends the question, the application-owned grounded-answer instructions, and a
+character-bounded set of locally retrieved excerpts to the selected provider.
 Provider processing and retention are governed by the user's account, plan, configuration, and the
 provider's applicable terms. OpenAI requests set `store=false`; this application setting does not
 replace the provider's account-level data controls or policies.
