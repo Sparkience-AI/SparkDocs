@@ -9,11 +9,11 @@ Authoritative documentation:
 - docs/architecture.md: module responsibilities and enforced resource limits
 
 Important limitations:
-- Q&A currently uses Google Gemini with a user-supplied key.
+- Q&A supports Google Gemini, OpenAI, and Anthropic Claude with a user-supplied key.
 - Retrieval uses local dense embeddings plus BM25, RRF fusion, and local cross-encoder reranking.
 - Citation labels are restricted to retrieved locations, but claim-level support is not independently verified.
 - FastEmbed model weights download and cache on first use; only bounded retrieved excerpts and the
-  question are sent to Gemini.
+  question are sent only to the cloud provider explicitly selected for that request.
 - Parsers are bounded but still execute in-process without an OS sandbox or hard timeout.
 - Do not describe SparkDocs alpha as suitable for confidential, regulated, or adversarial documents.
 - No Agent Skill or MCP integration is currently supported.

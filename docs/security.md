@@ -17,6 +17,8 @@ Every upload and every extracted string is untrusted input.
 - Document text, locators, and questions are escaped, delimited, and labeled untrusted in the model prompt.
 - Model-returned citation labels must match the exact locators of evidence included in that prompt.
 - The provider receives no tools and has no filesystem, browser, or mutation authority.
+- Gemini, OpenAI, and Anthropic keys are passed directly to session-owned clients and are not copied
+  into process-global environment variables or application logs.
 
 ## Known limitations
 
