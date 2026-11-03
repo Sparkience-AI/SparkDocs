@@ -55,7 +55,7 @@ uv run --locked streamlit run code.py
 ```
 
 Open <http://127.0.0.1:8501>, select Gemini, OpenAI, or Anthropic, confirm the model ID, enter the
-matching API key, and upload one supported document. The cost-conscious defaults are
+matching API key, explicitly confirm cloud transmission, and upload one supported document. The cost-conscious defaults are
 `gemini-3.8-flash`, `gpt-6-luna`, and `claude-haiku-5-5`; model availability depends on the user's
 provider account and the field is editable. The committed local configuration binds Streamlit to
 loopback and disables Streamlit usage reporting. Keys are passed directly to session-owned clients;

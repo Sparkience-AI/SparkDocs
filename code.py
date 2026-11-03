@@ -72,12 +72,16 @@ with st.sidebar:
         type="password",
         key=f"sparkdocs_api_key_{provider_kind.value}",
     )
+    cloud_consent = st.checkbox(
+        f"Send the question and retrieved excerpts to {provider_label}",
+        key=f"sparkdocs_consent_{provider_kind.value}",
+    )
     if st.button("Clear document, provider settings, and keys", use_container_width=True):
         clear_session()
         st.rerun()
     st.caption(
         f"Selected route: {provider_label}. The key is passed directly to a session-owned client "
-        "and is not written to disk."
+        "and is not written to disk. Q&A remains disabled until cloud transmission is confirmed."
     )
 
 uploaded_file = st.file_uploader(
@@ -127,7 +131,10 @@ if document is not None and index is not None:
         "retrieved locations; citations still require user verification."
     )
     question = st.text_input("Question about this document", max_chars=2_000)
-    if st.button("Ask SparkDocs", disabled=not bool(api_key and question.strip())):
+    if st.button(
+        "Ask SparkDocs",
+        disabled=not bool(api_key and cloud_consent and question.strip()),
+    ):
         try:
             service = DocumentQuestionService(
                 create_provider(provider_kind, api_key, model),
