@@ -8,7 +8,8 @@ store.
 SparkDocs validates and extracts documents in memory, builds structure-aware overlapping chunks,
 and retrieves evidence locally using dense embeddings plus BM25 keyword search. Reciprocal rank
 fusion (RRF) combines those results, a local cross-encoder reranks them, and only a bounded evidence
-set is sent in one Gemini request. Returned citation labels are restricted to retrieved locations;
+set is sent in one request to the user-selected Gemini, OpenAI, or Anthropic model. Returned citation
+labels are restricted to retrieved locations;
 SparkDocs does not independently prove that every generated claim is entailed by its citation.
 
 ## What it does
@@ -21,7 +22,8 @@ SparkDocs does not independently prove that every generated claim is entailed by
 - Uses local FastEmbed ONNX models for dense retrieval and cross-encoder reranking.
 - Applies a strict evidence budget and rejects citations outside the retrieved-location allowlist.
 - Keeps uploads and extracted content in the active Streamlit process memory only.
-- Sends only character-bounded selected evidence and the escaped question to Gemini using the key entered for the session.
+- Sends only character-bounded selected evidence and the escaped question to the explicitly
+  selected Gemini, OpenAI, or Anthropic model using a session-only user key.
 - Treats document content as untrusted data and does not give it tools or external authority.
 
 ## What it does not do
@@ -41,7 +43,7 @@ Prerequisites:
 
 - Python 3.11, 3.12, or 3.13
 - [uv](https://docs.astral.sh/uv/)
-- A Google Gemini API key for Q&A; ingestion and tests do not need a key
+- A Gemini, OpenAI, or Anthropic API key for Q&A; ingestion and tests do not need a key
 - Network access on first interactive use to download the local embedding and reranking model
   weights; subsequent runs use the local model cache
 
@@ -52,13 +54,15 @@ uv sync --locked
 uv run --locked streamlit run code.py
 ```
 
-Open <http://127.0.0.1:8501>, enter a Google API key in the password field, and upload one supported
-document. The committed local configuration binds Streamlit to loopback and disables Streamlit
-usage reporting. The key is passed directly to a session-owned Gemini client; it is not copied into
-the process environment or written to disk. FastEmbed downloads model weights from Hugging Face on
-first use and caches them locally; document text is not sent for embedding or reranking. A hosted
-deployment must explicitly override the local server address and should retain the restricted demo
-contract below.
+Open <http://127.0.0.1:8501>, select Gemini, OpenAI, or Anthropic, confirm the model ID, enter the
+matching API key, explicitly confirm cloud transmission, and upload one supported document. The cost-conscious defaults are
+`gemini-3.8-flash`, `gpt-6-luna`, and `claude-haiku-5-5`; model availability depends on the user's
+provider account and the field is editable. The committed local configuration binds Streamlit to
+loopback and disables Streamlit usage reporting. Keys are passed directly to session-owned clients;
+they are not copied into the process environment or written to disk. OpenAI requests explicitly set
+`store=false`. FastEmbed downloads model weights from Hugging Face on first use and caches them
+locally; document text is not sent for embedding or reranking. A hosted deployment must explicitly
+override the local server address and should retain the restricted demo contract below.
 
 ## Hosted demo
 
@@ -72,7 +76,7 @@ and API key in server memory, so use only disposable low-quota keys and non-sens
 Read the [privacy contract](docs/privacy.md), [security model](docs/security.md), and
 [architecture and limits](docs/architecture.md) before processing documents. Important boundaries:
 
-- Google receives the question and selected excerpts when Q&A is used.
+- The selected cloud provider receives the question and selected excerpts when Q&A is used.
 - Filename and archive validation reduce common ingestion risks but do not replace malware scanning
   or parser isolation.
 - Parser execution is currently in-process and has no operating-system sandbox or hard wall-clock
