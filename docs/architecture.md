@@ -11,6 +11,8 @@ SparkDocs separates the Streamlit interface from a framework-independent core.
 | `prompts` | Delimit evidence and enforce grounded, no-tools behavior |
 | `providers` | Own session-scoped Gemini, OpenAI Responses, and Anthropic Messages clients |
 | `service` | Coordinate one bounded provider request and validate returned citation labels |
+| `mcp_workspace` | Enforce one configured document root and hold one ephemeral local index |
+| `mcp_server` | Expose evidence-only stdio tools; never accept provider credentials |
 | `code.py` | Render the UI and translate product-level errors |
 
 Default ingestion limits:
@@ -37,3 +39,6 @@ fakes and never download these models.
 
 These bounds are defense-in-depth, not proof that all accepted files are safe. Parser isolation,
 claim-level citation verification, and broader retrieval evaluation remain release work.
+
+The optional MCP server is a separate local entry point over the same ingestion and retrieval code.
+It does not duplicate parsing, run a network listener, or expose the cloud answer provider.

@@ -35,3 +35,7 @@ malicious-document evaluation, and claim-level citation verification remain rele
 
 Report vulnerabilities privately using the Sparkience security-reporting process. Never attach an
 active exploit, private document, or credential to a public issue.
+
+The local MCP additionally fixes an allowed root at process start, rejects absolute/missing/outside
+paths, accepts no provider credentials, and exposes evidence retrieval rather than answer generation.
+See [the threat model](threat-model.md) for the complete boundary.

@@ -39,3 +39,10 @@ confidential, personal, regulated, legal, medical, or financial documents.
 
 SparkDocs has no telemetry pipeline. Operators must not add prompt or content logging without a new
 privacy review and explicit user-facing disclosure.
+
+## Local MCP
+
+The stdio MCP process reads only a user-configured root and keeps one document/index in memory.
+It returns bounded evidence text to the connected local MCP client. It has no provider-key argument
+and makes no model request. `clear_document` drops application-owned references; operating-system
+memory reclamation is not cryptographic erasure.

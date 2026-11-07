@@ -34,8 +34,8 @@ SparkDocs does not independently prove that every generated claim is entailed by
   archive formats.
 - It does not guarantee answer correctness, completeness, citation accuracy, or protection suitable
   for confidential, regulated, or adversarial documents.
-- It does not provide an Agent Skill or MCP server. Those are deferred until retrieval and citation
-  contracts are stable.
+- It does not expose a network MCP service, arbitrary filesystem access, model-authored code, OCR,
+  or document editing.
 
 ## Local installation
 
@@ -95,6 +95,27 @@ uv build --no-sources
 
 The tests use generated synthetic documents and a fake model provider; normal CI does not require a
 credential, network request, or real user document.
+
+## Local MCP and agent skill
+
+Install the optional MCP dependency and start the stdio server with an intentionally narrow root:
+
+```bash
+uv sync --locked --extra mcp
+uv run --locked --extra mcp sparkdocs-mcp --allowed-root ./documents
+```
+
+The server holds one document in memory and exposes four tools: `ingest_document`,
+`search_document`, `document_status`, and `clear_document`. It never accepts an API key, generates
+an answer, opens a network listener, or reads outside the configured root. First indexing can still
+download the documented local FastEmbed weights.
+
+The repo-local skill at `.agents/skills/sparkdocs-grounded-qa` teaches compatible agents to ingest,
+retrieve, cite exact locators, resist document prompt injection, and abstain when evidence is
+insufficient. The MCP is the controlled evidence surface; the skill is the workflow layer.
+
+See the [threat model](docs/threat-model.md), [performance envelope](docs/performance.md), and
+[release checklist](RELEASE_CHECKLIST.md) for release gates.
 
 ## Architecture
 
