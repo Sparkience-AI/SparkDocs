@@ -17,6 +17,8 @@ Every upload and every extracted string is untrusted input.
 - Document text, locators, and questions are escaped, delimited, and labeled untrusted in the model prompt.
 - Model-returned citation labels must match the exact locators of evidence included in that prompt.
 - The provider receives no tools and has no filesystem, browser, or mutation authority.
+- Gemini, OpenAI, and Anthropic keys are passed directly to session-owned clients and are not copied
+  into process-global environment variables or application logs.
 
 ## Known limitations
 
@@ -33,3 +35,7 @@ malicious-document evaluation, and claim-level citation verification remain rele
 
 Report vulnerabilities privately using the Sparkience security-reporting process. Never attach an
 active exploit, private document, or credential to a public issue.
+
+The local MCP additionally fixes an allowed root at process start, rejects absolute/missing/outside
+paths, accepts no provider credentials, and exposes evidence retrieval rather than answer generation.
+See [the threat model](threat-model.md) for the complete boundary.

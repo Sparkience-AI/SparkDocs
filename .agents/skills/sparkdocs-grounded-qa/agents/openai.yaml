@@ -1,0 +1,4 @@
+interface:
+  display_name: "SparkDocs Grounded Q&A"
+  short_description: "Answer local document questions with evidence"
+  default_prompt: "Use $sparkdocs-grounded-qa to answer my question from a local document with exact citations."

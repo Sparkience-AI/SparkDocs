@@ -9,9 +9,11 @@ SparkDocs separates the Streamlit interface from a framework-independent core.
 | `chunking` | Split within source sections with overlap while preserving human-readable locators |
 | `retrieval` | Fuse local dense and BM25 candidates with RRF, rerank, and enforce a context budget |
 | `prompts` | Delimit evidence and enforce grounded, no-tools behavior |
-| `providers` | Own the session-scoped Gemini client |
+| `providers` | Own session-scoped Gemini, OpenAI Responses, and Anthropic Messages clients |
 | `service` | Coordinate one bounded provider request and validate returned citation labels |
-| `code.py` | Render the UI and translate product-level errors |
+| `mcp_workspace` | Enforce one configured document root and hold one ephemeral local index |
+| `mcp_server` | Expose evidence-only stdio tools; never accept provider credentials |
+| `streamlit_app.py` | Render the UI and translate product-level errors |
 
 Default ingestion limits:
 
@@ -31,8 +33,12 @@ Default ingestion limits:
 The retrieval index and document content remain in process memory. FastEmbed model weights are
 downloaded on first use and may remain in the machine or hosting account's model cache, but user
 documents are not written into that cache. Dense retrieval uses `BAAI/bge-small-en-v1.5`; the query
-and passage prefixes required by that model are applied. `Xenova/ms-marco-MiniLM-L-6-v2` reranks a
-bounded candidate set. Normal tests use deterministic fakes and never download these models.
+and passage embedding paths provided by FastEmbed are applied.
+`Xenova/ms-marco-MiniLM-L-6-v2` reranks a bounded candidate set. Normal tests use deterministic
+fakes and never download these models.
 
 These bounds are defense-in-depth, not proof that all accepted files are safe. Parser isolation,
 claim-level citation verification, and broader retrieval evaluation remain release work.
+
+The optional MCP server is a separate local entry point over the same ingestion and retrieval code.
+It does not duplicate parsing, run a network listener, or expose the cloud answer provider.

@@ -7,7 +7,12 @@ import streamlit as st
 
 from sparkdocs.errors import SparkDocsError
 from sparkdocs.ingestion import UploadPolicy, ingest_upload
-from sparkdocs.providers import GeminiProvider
+from sparkdocs.providers import (
+    DEFAULT_MODELS,
+    PROVIDER_LABELS,
+    ProviderKind,
+    create_provider,
+)
 from sparkdocs.retrieval import FastEmbedDense, FastEmbedReranker, HybridRetriever, build_index
 from sparkdocs.service import DocumentQuestionService
 
@@ -16,13 +21,9 @@ UPLOAD_POLICY = UploadPolicy()
 
 
 def clear_session() -> None:
-    for key in (
-        "sparkdocs_api_key",
-        "sparkdocs_document",
-        "sparkdocs_index",
-        "sparkdocs_upload_digest",
-    ):
-        st.session_state.pop(key, None)
+    for key in tuple(st.session_state):
+        if key.startswith("sparkdocs_"):
+            st.session_state.pop(key, None)
 
 
 @st.cache_resource(show_spinner=False)
@@ -46,17 +47,41 @@ st.caption("Alpha · local-first hybrid RAG with grounded, source-located citati
 st.info(
     "Documents are indexed locally with dense embeddings, BM25, RRF, and a cross-encoder reranker. "
     "The local models download once on first use and are cached on this machine. Only retrieved "
-    "excerpts and your question are sent to Gemini using your key."
+    "excerpts and your question are sent to the cloud model provider you explicitly select."
 )
 
 with st.sidebar:
     st.subheader("Session controls")
-    api_key = st.text_input("Google API key", type="password", key="sparkdocs_api_key")
-    if st.button("Clear document and API key", use_container_width=True):
+    provider_kind = ProviderKind(
+        st.selectbox(
+            "Cloud provider",
+            options=list(ProviderKind),
+            format_func=lambda value: PROVIDER_LABELS[value],
+            key="sparkdocs_provider",
+        )
+    )
+    provider_label = PROVIDER_LABELS[provider_kind]
+    model = st.text_input(
+        "Model ID",
+        value=DEFAULT_MODELS[provider_kind],
+        key=f"sparkdocs_model_{provider_kind.value}",
+        help="Use a model available to your provider account.",
+    )
+    api_key = st.text_input(
+        f"{provider_label} API key",
+        type="password",
+        key=f"sparkdocs_api_key_{provider_kind.value}",
+    )
+    cloud_consent = st.checkbox(
+        f"Send the question and retrieved excerpts to {provider_label}",
+        key=f"sparkdocs_consent_{provider_kind.value}",
+    )
+    if st.button("Clear document, provider settings, and keys", use_container_width=True):
         clear_session()
         st.rerun()
     st.caption(
-        "The API key is passed directly to a session-owned client and is not written to disk."
+        f"Selected route: {provider_label}. The key is passed directly to a session-owned client "
+        "and is not written to disk. Q&A remains disabled until cloud transmission is confirmed."
     )
 
 uploaded_file = st.file_uploader(
@@ -106,10 +131,13 @@ if document is not None and index is not None:
         "retrieved locations; citations still require user verification."
     )
     question = st.text_input("Question about this document", max_chars=2_000)
-    if st.button("Ask SparkDocs", disabled=not bool(api_key and question.strip())):
+    if st.button(
+        "Ask SparkDocs",
+        disabled=not bool(api_key and cloud_consent and question.strip()),
+    ):
         try:
             service = DocumentQuestionService(
-                GeminiProvider(api_key),
+                create_provider(provider_kind, api_key, model),
                 HybridRetriever(dense_model(), reranker_model()),
             )
             with st.spinner("Running hybrid retrieval, reranking, and grounded generation..."):

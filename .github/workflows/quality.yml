@@ -29,8 +29,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Validate MCP extra and contracts
+        run: |
+          uv sync --locked --all-groups --extra mcp
+          uv run --locked --extra mcp pytest -q
       - name: Build distributions
         run: uv build --no-sources
+      - name: Generate release evidence
+        if: matrix.python-version == '3.12'
+        run: uv run --locked python scripts/release_evidence.py --dist dist --output release-evidence --source-commit "$GITHUB_SHA"
       - name: Smoke-test installed wheel
         run: |
           python -m venv .wheel-smoke
