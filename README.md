@@ -51,7 +51,7 @@ Prerequisites:
 git clone https://github.com/Sparkience-AI/SparkDocs.git
 cd SparkDocs
 uv sync --locked
-uv run --locked streamlit run code.py
+uv run --locked streamlit run streamlit_app.py
 ```
 
 Open <http://127.0.0.1:8501>, select Gemini, OpenAI, or Anthropic, confirm the model ID, enter the

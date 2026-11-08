@@ -1,11 +1,11 @@
 import tomllib
 from pathlib import Path
 
-APP_SOURCE = (Path(__file__).parents[1] / "code.py").read_text(encoding="utf-8")
+APP_SOURCE = (Path(__file__).parents[1] / "streamlit_app.py").read_text(encoding="utf-8")
 
 
 def test_app_entry_point_compiles_without_shared_passkey() -> None:
-    compile(APP_SOURCE, "code.py", "exec")
+    compile(APP_SOURCE, "streamlit_app.py", "exec")
     assert "SparkDocs" in APP_SOURCE
     assert "file_uploader" in APP_SOURCE
     assert "HybridRetriever" in APP_SOURCE

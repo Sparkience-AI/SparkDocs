@@ -13,7 +13,7 @@ SparkDocs separates the Streamlit interface from a framework-independent core.
 | `service` | Coordinate one bounded provider request and validate returned citation labels |
 | `mcp_workspace` | Enforce one configured document root and hold one ephemeral local index |
 | `mcp_server` | Expose evidence-only stdio tools; never accept provider credentials |
-| `code.py` | Render the UI and translate product-level errors |
+| `streamlit_app.py` | Render the UI and translate product-level errors |
 
 Default ingestion limits:
 
