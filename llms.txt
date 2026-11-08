@@ -16,4 +16,6 @@ Important limitations:
   question are sent only to the cloud provider explicitly selected for that request.
 - Parsers are bounded but still execute in-process without an OS sandbox or hard timeout.
 - Do not describe SparkDocs alpha as suitable for confidential, regulated, or adversarial documents.
-- No Agent Skill or MCP integration is currently supported.
+- The repo-local agent workflow is documented at `.agents/skills/sparkdocs-grounded-qa/SKILL.md`.
+- The optional SparkDocs MCP exposes only configured-root ingest, search, status, and clear tools;
+  it does not accept API keys or generate answers.

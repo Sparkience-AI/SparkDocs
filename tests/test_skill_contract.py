@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).parents[1] / ".agents" / "skills" / "sparkdocs-grounded-qa"
+LLMS_SOURCE = (Path(__file__).parents[1] / "llms.txt").read_text(encoding="utf-8")
 
 
 def test_skill_bundle_and_routing_cases() -> None:
@@ -16,3 +17,9 @@ def test_skill_bundle_and_routing_cases() -> None:
     }
     assert all("expected_tool_order" in case for case in cases)
     assert len({case["id"] for case in cases}) == len(cases)
+
+
+def test_discovery_metadata_names_shipped_agent_interfaces() -> None:
+    assert ".agents/skills/sparkdocs-grounded-qa" in LLMS_SOURCE
+    assert "SparkDocs MCP" in LLMS_SOURCE
+    assert "No Agent Skill or MCP integration" not in LLMS_SOURCE
