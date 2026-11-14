@@ -1,0 +1,20 @@
+name: Release evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  evidence:
+    uses: Sparkience-AI/.github/.github/workflows/reusable-python-release.yml@89f2cee919281a300c960fba3d8a8a124f1a61d0
+    with:
+      python-version: "3.12"
+      artifact-name: sparkdocs-0.1.0-release-evidence
+      expected-version: "0.1.0"
+      enable-attestations: true
+      retention-days: 14
