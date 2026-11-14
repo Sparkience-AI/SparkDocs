@@ -6,7 +6,7 @@
 - [ ] A clean environment installs the wheel and `sparkdocs-mcp --help` works with the MCP extra.
 - [ ] Streamlit keyboard navigation, labels, contrast, focus order, error announcements, and narrow viewport are manually checked.
 - [ ] The performance envelope is measured with synthetic public fixtures and compared with the previous release.
-- [ ] `scripts/release_evidence.py` produces checksums, CycloneDX SBOM, and provenance for the exact source commit.
+- [ ] The manual `Release evidence` workflow passes for version `0.1.0` and retains checksums, an artifact-installed CycloneDX SBOM, a release manifest, and GitHub provenance/SBOM attestations for the exact source commit.
 - [ ] Release notes include privacy boundaries, provider transmission, local model downloads, parser limitations, and rollback instructions.
 - [ ] Rollback is rehearsed by reinstalling the previous wheel/lock and confirming its smoke suite.
 

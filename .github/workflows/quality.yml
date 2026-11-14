@@ -10,13 +10,13 @@ permissions:
 
 jobs:
   python:
-    uses: Sparkience-AI/.github/.github/workflows/reusable-python-quality.yml@adc5b60771b32fbf93f28304fbcf2dd5ad4a0464
+    uses: Sparkience-AI/.github/.github/workflows/reusable-python-quality.yml@89f2cee919281a300c960fba3d8a8a124f1a61d0
     with:
       python-version: "3.12"
       run-type-check: true
 
   docs:
-    uses: Sparkience-AI/.github/.github/workflows/reusable-docs-geo.yml@adc5b60771b32fbf93f28304fbcf2dd5ad4a0464
+    uses: Sparkience-AI/.github/.github/workflows/reusable-docs-geo.yml@89f2cee919281a300c960fba3d8a8a124f1a61d0
 
   package:
     runs-on: ubuntu-latest
@@ -35,9 +35,6 @@ jobs:
           uv run --locked --extra mcp pytest -q
       - name: Build distributions
         run: uv build --no-sources
-      - name: Generate release evidence
-        if: matrix.python-version == '3.12'
-        run: uv run --locked python scripts/release_evidence.py --dist dist --output release-evidence --source-commit "$GITHUB_SHA"
       - name: Smoke-test installed wheel
         run: |
           python -m venv .wheel-smoke
