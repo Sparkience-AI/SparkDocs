@@ -1,5 +1,7 @@
 # SparkDocs
 
+![SparkDocs project cover](assets/sparkdocs-cover.jpg)
+
 **Status: alpha.** SparkDocs is a local-first document ingestion and grounded Q&A
 tool for PDF, DOCX, and PPTX files. It is intended for people who want to inspect ordinary
 documents with an explicit bring-your-own-key model rather than upload them to a managed document
