@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import httpx
 import pytest
+from openai import APIStatusError
 
 from sparkdocs.chunking import build_chunks
-from sparkdocs.errors import QuestionError
+from sparkdocs.errors import InsufficientEvidenceError, ProviderRequestError, QuestionError
 from sparkdocs.models import DocumentKind, IngestedDocument, Section
 from sparkdocs.prompts import build_grounded_answer_prompt
 from sparkdocs.retrieval import HybridRetriever, build_index
@@ -128,11 +130,38 @@ def test_no_match_abstains_before_generation(document: IngestedDocument) -> None
     index = build_index(document, embedder)
     provider = FakeProvider()
 
-    with pytest.raises(QuestionError, match="No matching evidence"):
+    with pytest.raises(InsufficientEvidenceError, match="No matching evidence"):
         DocumentQuestionService(provider, HybridRetriever(embedder)).answer(
             index, "What is the moon's diameter?"
         )
     assert provider.prompts == []
+
+
+@pytest.mark.parametrize(
+    ("status", "message"),
+    [(401, "rejected the API key"), (404, "model is unavailable")],
+)
+def test_openai_failures_report_safe_actionable_errors(
+    document: IngestedDocument, status: int, message: str
+) -> None:
+    class RejectingProvider:
+        def generate(self, prompt: str) -> str:
+            raise APIStatusError(
+                "Private provider diagnostic",
+                response=httpx.Response(
+                    status, request=httpx.Request("POST", "https://api.openai.com/v1/responses")
+                ),
+                body=None,
+            )
+
+    embedder = SemanticEmbedder()
+    index = build_index(document, embedder)
+    service = DocumentQuestionService(RejectingProvider(), HybridRetriever(embedder))
+
+    with pytest.raises(ProviderRequestError, match=message) as error:
+        service.answer(index, "How long are records kept?")
+
+    assert "Private provider diagnostic" not in str(error.value)
 
 
 def test_retrieval_rejects_non_positive_limits(document: IngestedDocument) -> None:
@@ -176,11 +205,12 @@ def test_service_bounds_context_and_returns_valid_citations(document: IngestedDo
     result = DocumentQuestionService(
         provider,
         HybridRetriever(embedder, KeywordReranker()),
-        max_evidence_characters=80,
+        max_evidence_characters=20,
     ).answer(index, "What is the retention period?")
 
     assert result.cited_locators == ("PDF page 1",)
     assert result.evidence_locators[0] == "PDF page 1"
+    assert result.evidence == (Section("PDF page 1", document.sections[0].text[:20]),)
     assert len(provider.prompts) == 1
 
 

@@ -3,10 +3,10 @@
 import re
 from dataclasses import dataclass
 
-from sparkdocs.errors import QuestionError
-from sparkdocs.models import DocumentIndex
+from sparkdocs.errors import InsufficientEvidenceError, ProviderResponseLimitError, QuestionError
+from sparkdocs.models import DocumentIndex, Section
 from sparkdocs.prompts import build_grounded_answer_prompt
-from sparkdocs.providers import TextProvider
+from sparkdocs.providers import TextProvider, explain_provider_failure
 from sparkdocs.retrieval import HybridRetriever
 
 CITATION_PATTERN = re.compile(r"\[([^\[\]]{1,200})\]")
@@ -18,6 +18,7 @@ class AnswerResult:
     answer: str
     evidence_locators: tuple[str, ...]
     cited_locators: tuple[str, ...]
+    evidence: tuple[Section, ...] = ()
 
 
 class DocumentQuestionService:
@@ -48,9 +49,14 @@ class DocumentQuestionService:
             max_characters=self._max_evidence_characters,
         )
         if not evidence:
-            raise QuestionError("No matching evidence was found in the document.")
+            raise InsufficientEvidenceError("No matching evidence was found in the document.")
         prompt = build_grounded_answer_prompt(normalized_question, evidence)
-        answer = self._provider.generate(prompt)
+        try:
+            answer = self._provider.generate(prompt)
+        except ProviderResponseLimitError:
+            raise
+        except Exception as exc:
+            raise explain_provider_failure(exc) from None
         allowed = tuple(section.locator for section in evidence)
         citations = tuple(dict.fromkeys(CITATION_PATTERN.findall(answer)))
         invalid = tuple(locator for locator in citations if locator not in allowed)
@@ -62,4 +68,5 @@ class DocumentQuestionService:
             answer=answer,
             evidence_locators=allowed,
             cited_locators=citations,
+            evidence=evidence,
         )

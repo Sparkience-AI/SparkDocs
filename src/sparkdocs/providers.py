@@ -8,13 +8,36 @@ from typing import Any, Protocol, cast
 
 from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 
-from sparkdocs.errors import ProviderResponseLimitError
+from sparkdocs.errors import ProviderRequestError, ProviderResponseLimitError
 
 
 class TextProvider(Protocol):
     def generate(self, prompt: str) -> str:
         """Generate text from one application-owned prompt."""
+
+
+def explain_provider_failure(error: Exception) -> ProviderRequestError:
+    """Classify OpenAI request errors without including provider-supplied data."""
+    if isinstance(error, APITimeoutError):
+        return ProviderRequestError("The model provider timed out. Try again.")
+    if isinstance(error, APIConnectionError):
+        return ProviderRequestError("Could not reach the model provider. Check your connection.")
+    if isinstance(error, APIStatusError):
+        if error.status_code == 401:
+            return ProviderRequestError("The provider rejected the API key. Check or replace it.")
+        if error.status_code == 404 or error.code == "model_not_found":
+            return ProviderRequestError(
+                "The model is unavailable for this account. Check the model ID and access."
+            )
+        if error.status_code == 403:
+            return ProviderRequestError("The provider denied access. Check account permissions.")
+        if error.status_code == 429:
+            return ProviderRequestError("The provider rate or quota limit was reached.")
+    return ProviderRequestError(
+        "The model request failed. Check the key, model ID, connection, and account quota."
+    )
 
 
 class ProviderKind(StrEnum):

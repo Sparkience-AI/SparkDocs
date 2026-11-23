@@ -56,22 +56,35 @@ uv sync --locked
 uv run --locked streamlit run streamlit_app.py
 ```
 
-Open <http://127.0.0.1:8501>, select Gemini, OpenAI, or Anthropic, confirm the model ID, enter the
-matching API key, explicitly confirm cloud transmission, and upload one supported document. The cost-conscious defaults are
+Open <http://127.0.0.1:8501> and upload one supported document or select the built-in sample.
+To generate an answer, select Gemini, OpenAI, or Anthropic, confirm the model ID, enter the matching
+API key, and explicitly confirm cloud transmission. The cost-conscious defaults are
 `gemini-3.8-flash`, `gpt-6-luna`, and `claude-haiku-5-5`; model availability depends on the user's
 provider account and the field is editable. The committed local configuration binds Streamlit to
 loopback and disables Streamlit usage reporting. Keys are passed directly to session-owned clients;
 they are not copied into the process environment or written to disk. OpenAI requests explicitly set
 `store=false`. FastEmbed downloads model weights from Hugging Face on first use and caches them
-locally; document text is not sent for embedding or reranking. A hosted deployment must explicitly
-override the local server address and should retain the restricted demo contract below.
+locally. Embedding and reranking run on your machine using the installed models.
+
+### Try the sample handbook
+
+1. Under **Document source**, select **Try the sample handbook**. SparkDocs indexes a fictional
+   equipment claims handbook using the same pipeline as an uploaded PDF. Allow time for the first
+   model downloads during upload or search.
+2. Ask *How long do I have to file a battery claim for a device used outdoors?* Select **Find local
+   evidence** to inspect excerpts without an API key. Page 3 gives the seven-day outdoor deadline.
+   Page 2 describes a separate 30-day indoor deadline.
+3. To try Q&A, choose a cloud provider, enter your key, confirm consent, and select **Ask SparkDocs**.
+   Inspect the cited excerpt for the seven-day deadline. Then ask *How many replacement kits can
+   one member borrow at once?* The handbook describes availability but gives no borrowing limit.
+4. Use **Clear document, provider settings, and keys** to end the walkthrough.
 
 ## Hosted demo
 
-The historical demo URL is <https://sparkdocs.streamlit.app/>. Treat it as an optional demonstration,
-not the complete-product architecture. Deployment health and parity with the current branch are not
-guaranteed until a reviewed release is deployed. A hosted session receives both the user's document
-and API key in server memory, so use only disposable low-quota keys and non-sensitive documents.
+The historical demo URL is <https://sparkdocs.streamlit.app/>. The local sample above is the
+documented walkthrough for this repository. Availability and revision of the historical deployment
+are unverified. In a hosted deployment, the server receives the document and API key in memory.
+Use disposable low-quota keys and non-sensitive documents for hosted demos.
 
 ## Security and privacy
 
@@ -97,6 +110,14 @@ uv build --no-sources
 
 The tests use generated synthetic documents and a fake model provider; normal CI does not require a
 credential, network request, or real user document.
+
+The [retrieval case study](docs/retrieval-case-study.md) covers the original holdout and live
+OpenAI results. The separate challenge set checks evidence selection on a longer PDF section,
+a DOCX table, and a slide deck. It uses the cached local models and makes no cloud provider calls.
+
+```bash
+uv run --locked python -m benchmarks.sparkdocs.challenge --local-models
+```
 
 ## Local MCP and agent skill
 
