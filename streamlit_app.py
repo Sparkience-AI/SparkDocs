@@ -60,9 +60,7 @@ st.markdown(
 st.title("SparkDocs")
 st.caption("Alpha · local-first hybrid RAG with grounded, source-located citations")
 st.info(
-    "Documents are indexed locally with dense embeddings, BM25, RRF, and a cross-encoder reranker. "
-    "The local models download once and are cached on the machine running SparkDocs. "
-    "Only retrieved excerpts and your question are sent to the cloud provider you select."
+    "Evidence search runs locally. Cloud answers send your question and retrieved excerpts."
 )
 
 generation = st.session_state.get(SESSION_GENERATION, 0)
@@ -110,9 +108,6 @@ source = st.radio(
 )
 if source == "Try the sample handbook":
     upload = (SAMPLE_FILENAME, "application/pdf", sample_pdf())
-    st.caption("Try one of these questions with Find local evidence or Ask SparkDocs.")
-    for sample_question in SAMPLE_QUESTIONS:
-        st.write(f"- {sample_question}")
 else:
     uploaded_file = st.file_uploader(
         "Upload one PDF, DOCX, or PPTX document",
@@ -167,15 +162,25 @@ if document is not None and index is not None:
         f"Indexed {len(index.chunks)} structure-aware chunks in memory. Answers must cite only "
         "retrieved locations; citations still require user verification."
     )
+    question_key = f"sparkdocs_doc_question_{document.sha256}"
+    if source == "Try the sample handbook":
+        st.caption("Choose a sample question to fill the field below.")
+        with st.container(horizontal=True):
+            for sample_question in SAMPLE_QUESTIONS:
+                st.button(
+                    sample_question,
+                    on_click=st.session_state.__setitem__,
+                    args=(question_key, sample_question),
+                )
     question = st.text_input(
         "Question about this document",
         max_chars=2_000,
-        key=f"sparkdocs_doc_question_{document.sha256}",
+        key=question_key,
     ).strip()
-    find_evidence = st.button("Find local evidence", disabled=not question)
-    ask_sparkdocs = st.button(
-        "Ask SparkDocs", disabled=not bool(api_key.strip() and cloud_consent and question)
-    )
+    can_ask = bool(api_key.strip() and cloud_consent and question)
+    with st.container(horizontal=True):
+        ask_sparkdocs = st.button("Ask SparkDocs", type="primary", disabled=not can_ask)
+        find_evidence = st.button("Find local evidence", disabled=not question)
     view_key = "sparkdocs_doc_view"
     no_evidence_message = "No matching evidence was found in the document. Try rephrasing."
     if find_evidence or ask_sparkdocs:
@@ -233,16 +238,28 @@ if document is not None and index is not None:
             )
             st.subheader("Evidence sent to the model")
             cited_locators = view_result.cited_locators
-            excerpts = view_result.evidence
+            for excerpt in view_result.evidence:
+                if excerpt.locator in cited_locators:
+                    with st.expander(
+                        f"{excerpt.locator} (cited)", expanded=len(cited_locators) == 1
+                    ):
+                        st.text(excerpt.text)
+            other_excerpts = [
+                item for item in view_result.evidence if item.locator not in cited_locators
+            ]
+            if other_excerpts:
+                with st.expander(
+                    f"Other passages sent to {answer_provider} ({len(other_excerpts)})"
+                ):
+                    for excerpt in other_excerpts:
+                        st.text(excerpt.locator)
+                        st.text(excerpt.text)
         else:
             st.subheader("Local evidence preview")
             st.caption("SparkDocs did not send these excerpts to a model provider.")
-            cited_locators = ()
             excerpts = view_result
-        st.caption("Open a source location to inspect its excerpt.")
-        for excerpt in excerpts:
-            marker = "cited" if excerpt.locator in cited_locators else "retrieved"
-            with st.expander(f"{excerpt.locator} ({marker})"):
-                st.text(excerpt.text)
+            for excerpt in excerpts:
+                with st.expander(f"{excerpt.locator} (retrieved)"):
+                    st.text(excerpt.text)
 elif upload is None:
     st.write("Upload a supported document to begin. No shared passkey is required.")

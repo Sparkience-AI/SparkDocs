@@ -106,6 +106,26 @@ def test_sample_can_be_cleared_back_to_empty_upload(app: AppTest) -> None:
     assert app.file_uploader[0].value is None
 
 
+def test_sample_question_fills_input_without_submitting(app: AppTest) -> None:
+    app.radio[0].set_value("Try the sample handbook").run()
+    suggestion = next(button for button in app.button if "battery claim" in button.label)
+    suggestion.click().run()
+
+    assert not app.exception
+    assert (
+        app.text_input(
+            key=next(
+                field.key
+                for field in app.text_input
+                if field.label == "Question about this document"
+            )
+        ).value
+        == suggestion.label
+    )
+    assert next(button for button in app.button if button.label == "Ask SparkDocs").disabled
+    assert "sparkdocs_doc_view" not in app.session_state
+
+
 def test_switching_sources_drops_the_previous_upload_and_answer(app: AppTest) -> None:
     upload_sample(app, "my-document.pdf")
     app.session_state["sparkdocs_doc_previous_answer"] = "Old answer"
