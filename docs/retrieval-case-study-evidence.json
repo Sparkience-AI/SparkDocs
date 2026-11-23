@@ -1,0 +1,196 @@
+{
+  "source_commit_recorded_by_runs": null,
+  "reviewed_source_sha256_normalized_lf": {
+    "benchmarks/sparkdocs/fixtures.py": "a15996bced8f92f53f660bf7d09dfc27a50042f83d25dae5f1166ce415c4fd3c",
+    "benchmarks/sparkdocs/run.py": "631f1cf902c3df5ec20a29631608bed415a76ddb9f13d015cc4b57489c705e1d",
+    "scripts/openai_probe.py": "df5941ccd376bc341b35f040b6d19189b4680a0faab342a97bab0a079793ae7d",
+    "src/sparkdocs/retrieval.py": "9f12b8dbdda9753b4cc18bd92e396d44c6a1c2268a90bcb853451ce097afc50f",
+    "src/sparkdocs/service.py": "6500a58920ae670159d241f90b7bae622eeec451fd361114872576d30275f135",
+    "uv.lock": "64950f0ad7321056f2b3a52170e3515c1c5a8f18e8bed3ac7cf6af1953cdcf39"
+  },
+  "production_run_manual_scores": {
+    "supported_answers": 12,
+    "answerable_questions": 12,
+    "abstentions": 3,
+    "unanswerable_questions": 3
+  },
+  "runs": {
+    "retrieval-holdout.json": {
+      "model": null,
+      "evidence_mode": null,
+      "provider_calls": 0,
+      "holdout": {
+        "retrieval": {
+          "bm25": {
+            "questions": 15,
+            "answerable_questions": 12,
+            "all_required_in_evidence_count": 11,
+            "mean_reciprocal_rank_at_6": 0.875,
+            "median_retrieval_ms": 0.185
+          },
+          "dense": {
+            "questions": 15,
+            "answerable_questions": 12,
+            "all_required_in_evidence_count": 12,
+            "mean_reciprocal_rank_at_6": 1.0,
+            "median_retrieval_ms": 6.527
+          },
+          "hybrid": {
+            "questions": 15,
+            "answerable_questions": 12,
+            "all_required_in_evidence_count": 12,
+            "mean_reciprocal_rank_at_6": 0.9444444444444444,
+            "median_retrieval_ms": 6.739
+          },
+          "hybrid_rerank": {
+            "questions": 15,
+            "answerable_questions": 12,
+            "all_required_in_evidence_count": 12,
+            "mean_reciprocal_rank_at_6": 0.9583333333333334,
+            "median_retrieval_ms": 53.975
+          }
+        },
+        "generation": {}
+      },
+      "maple_trace": {
+        "bm25": [
+          null
+        ],
+        "dense": [
+          1
+        ],
+        "hybrid": [
+          3
+        ],
+        "hybrid_rerank": [
+          1
+        ]
+      },
+      "maple_cited_locators": {}
+    },
+    "luna-holdout.json": {
+      "model": "gpt-6-luna",
+      "evidence_mode": "bm25",
+      "provider_calls": 16,
+      "holdout": {
+        "retrieval": {
+          "bm25": {
+            "questions": 15,
+            "answerable_questions": 12,
+            "all_required_in_evidence_count": 11,
+            "mean_reciprocal_rank_at_6": 0.875,
+            "median_retrieval_ms": 0.327
+          }
+        },
+        "generation": {
+          "outcomes": {
+            "accepted_answer": 15
+          },
+          "answerable": {
+            "questions": 12,
+            "empty_retrieval_count": 0,
+            "abstention_marker_count": 1,
+            "literal_answer_match_count": 11,
+            "labeled_evidence_citation_count": 11
+          },
+          "unanswerable": {
+            "questions": 3,
+            "empty_retrieval_count": 0,
+            "abstention_marker_count": 3,
+            "literal_answer_match_count": 0,
+            "labeled_evidence_citation_count": 0
+          }
+        }
+      },
+      "maple_trace": {
+        "bm25": [
+          null
+        ]
+      },
+      "maple_cited_locators": {
+        "answer": [
+          "PDF page 5",
+          "PDF page 6"
+        ],
+        "gold_evidence_answer": [
+          "PDF page 3"
+        ]
+      }
+    },
+    "luna-hybrid-holdout.json": {
+      "model": "gpt-6-luna",
+      "evidence_mode": "hybrid_rerank",
+      "provider_calls": 15,
+      "holdout": {
+        "retrieval": {
+          "bm25": {
+            "questions": 15,
+            "answerable_questions": 12,
+            "all_required_in_evidence_count": 11,
+            "mean_reciprocal_rank_at_6": 0.875,
+            "median_retrieval_ms": 0.36
+          },
+          "dense": {
+            "questions": 15,
+            "answerable_questions": 12,
+            "all_required_in_evidence_count": 12,
+            "mean_reciprocal_rank_at_6": 1.0,
+            "median_retrieval_ms": 17.136
+          },
+          "hybrid": {
+            "questions": 15,
+            "answerable_questions": 12,
+            "all_required_in_evidence_count": 12,
+            "mean_reciprocal_rank_at_6": 0.9444444444444444,
+            "median_retrieval_ms": 17.577
+          },
+          "hybrid_rerank": {
+            "questions": 15,
+            "answerable_questions": 12,
+            "all_required_in_evidence_count": 12,
+            "mean_reciprocal_rank_at_6": 0.9583333333333334,
+            "median_retrieval_ms": 88.047
+          }
+        },
+        "generation": {
+          "outcomes": {
+            "accepted_answer": 15
+          },
+          "answerable": {
+            "questions": 12,
+            "empty_retrieval_count": 0,
+            "abstention_marker_count": 0,
+            "literal_answer_match_count": 12,
+            "labeled_evidence_citation_count": 12
+          },
+          "unanswerable": {
+            "questions": 3,
+            "empty_retrieval_count": 0,
+            "abstention_marker_count": 2,
+            "literal_answer_match_count": 0,
+            "labeled_evidence_citation_count": 0
+          }
+        }
+      },
+      "maple_trace": {
+        "bm25": [
+          null
+        ],
+        "dense": [
+          1
+        ],
+        "hybrid": [
+          3
+        ],
+        "hybrid_rerank": [
+          1
+        ]
+      },
+      "maple_cited_locators": {
+        "answer": [
+          "PDF page 3"
+        ]
+      }
+    }
+  }
+}
