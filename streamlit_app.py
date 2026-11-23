@@ -1,12 +1,15 @@
 """Streamlit entry point for the SparkDocs alpha."""
 
+import re
 from hashlib import sha256
+from html import escape
 from pathlib import Path
 
 import streamlit as st
 
-from sparkdocs.errors import SparkDocsError
+from sparkdocs.errors import InsufficientEvidenceError, SparkDocsError
 from sparkdocs.ingestion import UploadPolicy, ingest_upload
+from sparkdocs.models import Section
 from sparkdocs.providers import (
     DEFAULT_MODELS,
     PROVIDER_LABELS,
@@ -14,16 +17,28 @@ from sparkdocs.providers import (
     create_provider,
 )
 from sparkdocs.retrieval import FastEmbedDense, FastEmbedReranker, HybridRetriever, build_index
-from sparkdocs.service import DocumentQuestionService
+from sparkdocs.sample import SAMPLE_FILENAME, SAMPLE_QUESTIONS, sample_pdf
+from sparkdocs.service import AnswerResult, DocumentQuestionService
 
 APP_ROOT = Path(__file__).resolve().parent
 UPLOAD_POLICY = UploadPolicy()
+SESSION_GENERATION = "sparkdocs_session_generation"
+DOCUMENT_KEYS = {"sparkdocs_document", "sparkdocs_index", "sparkdocs_upload_digest"}
+
+
+def clear_document() -> None:
+    for key in tuple(st.session_state):
+        if key in DOCUMENT_KEYS or key.startswith("sparkdocs_doc_"):
+            st.session_state.pop(key, None)
 
 
 def clear_session() -> None:
+    generation = st.session_state.get(SESSION_GENERATION, 0)
     for key in tuple(st.session_state):
         if key.startswith("sparkdocs_"):
             st.session_state.pop(key, None)
+    # A new widget identity clears the upload and sidebar fields in the browser as well.
+    st.session_state[SESSION_GENERATION] = generation + 1
 
 
 @st.cache_resource(show_spinner=False)
@@ -46,10 +61,11 @@ st.title("SparkDocs")
 st.caption("Alpha · local-first hybrid RAG with grounded, source-located citations")
 st.info(
     "Documents are indexed locally with dense embeddings, BM25, RRF, and a cross-encoder reranker. "
-    "The local models download once on first use and are cached on this machine. Only retrieved "
-    "excerpts and your question are sent to the cloud model provider you explicitly select."
+    "The local models download once and are cached on the machine running SparkDocs. "
+    "Only retrieved excerpts and your question are sent to the cloud provider you select."
 )
 
+generation = st.session_state.get(SESSION_GENERATION, 0)
 with st.sidebar:
     st.subheader("Session controls")
     provider_kind = ProviderKind(
@@ -57,53 +73,74 @@ with st.sidebar:
             "Cloud provider",
             options=list(ProviderKind),
             format_func=lambda value: PROVIDER_LABELS[value],
-            key="sparkdocs_provider",
+            key=f"sparkdocs_provider_{generation}",
         )
     )
     provider_label = PROVIDER_LABELS[provider_kind]
     model = st.text_input(
         "Model ID",
         value=DEFAULT_MODELS[provider_kind],
-        key=f"sparkdocs_model_{provider_kind.value}",
+        key=f"sparkdocs_model_{provider_kind.value}_{generation}",
         help="Use a model available to your provider account.",
     )
     api_key = st.text_input(
         f"{provider_label} API key",
         type="password",
-        key=f"sparkdocs_api_key_{provider_kind.value}",
+        key=f"sparkdocs_api_key_{provider_kind.value}_{generation}",
     )
     cloud_consent = st.checkbox(
         f"Send the question and retrieved excerpts to {provider_label}",
-        key=f"sparkdocs_consent_{provider_kind.value}",
+        key=f"sparkdocs_consent_{provider_kind.value}_{generation}",
     )
-    if st.button("Clear document, provider settings, and keys", use_container_width=True):
-        clear_session()
-        st.rerun()
+    st.button(
+        "Clear document, provider settings, and keys",
+        use_container_width=True,
+        on_click=clear_session,
+    )
     st.caption(
         f"Selected route: {provider_label}. The key is passed directly to a session-owned client "
         "and is not written to disk. Q&A remains disabled until cloud transmission is confirmed."
     )
 
-uploaded_file = st.file_uploader(
-    "Upload one PDF, DOCX, or PPTX document",
-    type=["pdf", "docx", "pptx"],
-    help="Maximum upload: 10 MiB. Expanded OOXML content and extracted text have separate limits.",
+source = st.radio(
+    "Document source",
+    ["Upload a document", "Try the sample handbook"],
+    horizontal=True,
+    key=f"sparkdocs_source_{generation}",
 )
+if source == "Try the sample handbook":
+    upload = (SAMPLE_FILENAME, "application/pdf", sample_pdf())
+    st.caption("Try one of these questions with Find local evidence or Ask SparkDocs.")
+    for sample_question in SAMPLE_QUESTIONS:
+        st.write(f"- {sample_question}")
+else:
+    uploaded_file = st.file_uploader(
+        "Upload one PDF, DOCX, or PPTX document",
+        type=["pdf", "docx", "pptx"],
+        help="Maximum upload: 10 MiB. Expanded OOXML and extracted text have separate limits.",
+        key=f"sparkdocs_upload_{generation}",
+    )
+    upload = (
+        (uploaded_file.name, uploaded_file.type, uploaded_file.getvalue())
+        if uploaded_file is not None
+        else None
+    )
 
-if uploaded_file is not None:
-    content = uploaded_file.getvalue()
-    digest_key = (uploaded_file.name, uploaded_file.type, sha256(content).hexdigest())
+if upload is None:
+    clear_document()
+else:
+    filename, media_type, content = upload
+    digest_key = (filename, media_type, sha256(content).hexdigest())
     if st.session_state.get("sparkdocs_upload_digest") != digest_key:
+        clear_document()
         try:
             ingested_document = ingest_upload(
-                filename=uploaded_file.name,
-                claimed_media_type=uploaded_file.type,
+                filename=filename,
+                claimed_media_type=media_type,
                 content=content,
                 policy=UPLOAD_POLICY,
             )
         except SparkDocsError as exc:
-            st.session_state.pop("sparkdocs_document", None)
-            st.session_state.pop("sparkdocs_index", None)
             st.error(str(exc))
         else:
             try:
@@ -130,27 +167,82 @@ if document is not None and index is not None:
         f"Indexed {len(index.chunks)} structure-aware chunks in memory. Answers must cite only "
         "retrieved locations; citations still require user verification."
     )
-    question = st.text_input("Question about this document", max_chars=2_000)
-    if st.button(
-        "Ask SparkDocs",
-        disabled=not bool(api_key and cloud_consent and question.strip()),
-    ):
+    question = st.text_input(
+        "Question about this document",
+        max_chars=2_000,
+        key=f"sparkdocs_doc_question_{document.sha256}",
+    ).strip()
+    find_evidence = st.button("Find local evidence", disabled=not question)
+    ask_sparkdocs = st.button(
+        "Ask SparkDocs", disabled=not bool(api_key.strip() and cloud_consent and question)
+    )
+    view_key = "sparkdocs_doc_view"
+    no_evidence_message = "No matching evidence was found in the document. Try rephrasing."
+    if find_evidence or ask_sparkdocs:
+        st.session_state.pop(view_key, None)
         try:
-            service = DocumentQuestionService(
-                create_provider(provider_kind, api_key, model),
-                HybridRetriever(dense_model(), reranker_model()),
+            with st.spinner("Preparing local retrieval..."):
+                retriever = HybridRetriever(dense_model(), reranker_model())
+        except Exception:
+            st.error(
+                "The local retrieval models could not be initialized. Check disk space and "
+                "network access for the first model download."
             )
-            with st.spinner("Running hybrid retrieval, reranking, and grounded generation..."):
-                result = service.answer(index, question)
-        except (SparkDocsError, ValueError) as exc:
+            st.stop()
+
+        if ask_sparkdocs and not model.strip():
+            st.error("Enter a model ID available to your provider account.")
+            st.stop()
+
+        try:
+            if find_evidence:
+                with st.spinner("Finding evidence on the machine running SparkDocs..."):
+                    evidence = retriever.retrieve(index, question)
+                if evidence:
+                    st.session_state[view_key] = (question, evidence, None)
+                else:
+                    st.info(no_evidence_message)
+            else:
+                service = DocumentQuestionService(
+                    create_provider(provider_kind, api_key, model), retriever
+                )
+                with st.spinner("Running hybrid retrieval, reranking, and grounded generation..."):
+                    result = service.answer(index, question)
+                st.session_state[view_key] = (question, result, provider_label)
+        except InsufficientEvidenceError:
+            st.info(no_evidence_message)
+        except SparkDocsError as exc:
             st.error(str(exc))
         except Exception:
-            st.error("The model request failed. Check the key, connection, quota, and try again.")
+            if find_evidence:
+                st.error("Local evidence retrieval failed. Try again or reload the document.")
+            else:
+                st.error("Could not complete the question. Check the model settings and try again.")
+
+    view = st.session_state.get(view_key)
+    if view is not None and view[0] == question:
+        _, view_result, answer_provider = view
+        excerpts: tuple[Section, ...]
+        if isinstance(view_result, AnswerResult):
+            st.subheader(f"Answer from {answer_provider}")
+            safe_answer = re.sub(
+                r"\*\*([^*\n]+)\*\*", r"<strong>\1</strong>", escape(view_result.answer)
+            )
+            st.html(
+                f'<div style="white-space: pre-wrap; overflow-wrap: anywhere">{safe_answer}</div>'
+            )
+            st.subheader("Evidence sent to the model")
+            cited_locators = view_result.cited_locators
+            excerpts = view_result.evidence
         else:
-            st.markdown(result.answer)
-            with st.expander("Evidence locations sent to the model"):
-                for locator in result.evidence_locators:
-                    marker = "cited" if locator in result.cited_locators else "retrieved"
-                    st.write(f"- {locator} ({marker})")
-elif uploaded_file is None:
+            st.subheader("Local evidence preview")
+            st.caption("SparkDocs did not send these excerpts to a model provider.")
+            cited_locators = ()
+            excerpts = view_result
+        st.caption("Open a source location to inspect its excerpt.")
+        for excerpt in excerpts:
+            marker = "cited" if excerpt.locator in cited_locators else "retrieved"
+            with st.expander(f"{excerpt.locator} ({marker})"):
+                st.text(excerpt.text)
+elif upload is None:
     st.write("Upload a supported document to begin. No shared passkey is required.")

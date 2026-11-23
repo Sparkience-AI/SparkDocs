@@ -13,7 +13,7 @@ def test_app_entry_point_compiles_without_shared_passkey() -> None:
     assert "create_provider(provider_kind, api_key, model)" in APP_SOURCE
     assert "list(ProviderKind)" in APP_SOURCE
     assert "sparkdocs_consent_" in APP_SOURCE
-    assert "api_key and cloud_consent" in APP_SOURCE
+    assert "api_key.strip() and cloud_consent" in APP_SOURCE
     assert 'st.text_input("Passkey"' not in APP_SOURCE
     assert "shared_password" not in APP_SOURCE
 

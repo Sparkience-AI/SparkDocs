@@ -25,5 +25,13 @@ class QuestionError(SparkDocsError):
     """A question is invalid or has no matching evidence."""
 
 
+class InsufficientEvidenceError(QuestionError):
+    """Local retrieval found no evidence to send for this question."""
+
+
+class ProviderRequestError(SparkDocsError):
+    """The selected provider could not complete a generation request."""
+
+
 class ProviderResponseLimitError(SparkDocsError):
     """A provider response exceeded the configured application limit."""
