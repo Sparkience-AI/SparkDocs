@@ -59,9 +59,7 @@ st.markdown(
 
 st.title("SparkDocs")
 st.caption("Alpha · local-first hybrid RAG with grounded, source-located citations")
-st.info(
-    "Evidence search runs locally. Cloud answers send your question and retrieved excerpts."
-)
+st.info("Evidence search runs locally. Cloud answers send your question and retrieved excerpts.")
 
 generation = st.session_state.get(SESSION_GENERATION, 0)
 with st.sidebar:
