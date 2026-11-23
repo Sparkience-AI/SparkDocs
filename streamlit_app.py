@@ -180,9 +180,22 @@ if document is not None and index is not None:
         ask_sparkdocs = st.button("Ask SparkDocs", type="primary", disabled=not can_ask)
         find_evidence = st.button("Find local evidence", disabled=not question)
     view_key = "sparkdocs_doc_view"
+    answer_key = "sparkdocs_doc_saved_answer"
+    evidence_key = "sparkdocs_doc_saved_evidence"
+    answer_context = (question, provider_kind, model.strip())
+    saved_answer = st.session_state.get(answer_key)
+    saved_evidence = st.session_state.get(evidence_key)
     no_evidence_message = "No matching evidence was found in the document. Try rephrasing."
+    if ask_sparkdocs and saved_answer is not None and saved_answer[0] == answer_context:
+        st.session_state[view_key] = (question, saved_answer[1], provider_label)
+        ask_sparkdocs = False
+    if find_evidence and saved_evidence is not None and saved_evidence[0] == question:
+        if saved_evidence[1]:
+            st.session_state[view_key] = (question, saved_evidence[1], None)
+        else:
+            st.info(no_evidence_message)
+        find_evidence = False
     if find_evidence or ask_sparkdocs:
-        st.session_state.pop(view_key, None)
         try:
             with st.spinner("Preparing local retrieval..."):
                 retriever = HybridRetriever(dense_model(), reranker_model())
@@ -201,6 +214,7 @@ if document is not None and index is not None:
             if find_evidence:
                 with st.spinner("Finding evidence on the machine running SparkDocs..."):
                     evidence = retriever.retrieve(index, question)
+                st.session_state[evidence_key] = (question, evidence)
                 if evidence:
                     st.session_state[view_key] = (question, evidence, None)
                 else:
@@ -211,6 +225,8 @@ if document is not None and index is not None:
                 )
                 with st.spinner("Running hybrid retrieval, reranking, and grounded generation..."):
                     result = service.answer(index, question)
+                st.session_state[answer_key] = (answer_context, result)
+                st.session_state[evidence_key] = (question, result.evidence)
                 st.session_state[view_key] = (question, result, provider_label)
         except InsufficientEvidenceError:
             st.info(no_evidence_message)
@@ -254,7 +270,7 @@ if document is not None and index is not None:
                         st.text(excerpt.text)
         else:
             st.subheader("Local evidence preview")
-            st.caption("SparkDocs did not send these excerpts to a model provider.")
+            st.caption("Viewing these excerpts does not make a cloud request.")
             excerpts = view_result
             for excerpt in excerpts:
                 with st.expander(f"{excerpt.locator} (retrieved)"):

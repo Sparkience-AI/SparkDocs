@@ -1,11 +1,13 @@
 from collections.abc import Sequence
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
-from sparkdocs import retrieval
+from sparkdocs import providers, retrieval
+from sparkdocs.models import Section
 from sparkdocs.sample import SAMPLE_FILENAME, sample_pdf
 
 APP_PATH = Path(__file__).parents[1] / "streamlit_app.py"
@@ -140,3 +142,29 @@ def test_switching_sources_drops_the_previous_upload_and_answer(app: AppTest) ->
 
     assert_no_document(app)
     assert app.file_uploader[0].value is None
+
+
+def test_switching_result_views_reuses_answer_and_evidence(
+    app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = Mock()
+    provider.generate.return_value = "Seven days. [PDF page 3]"
+    monkeypatch.setattr(providers, "create_provider", Mock(return_value=provider))
+    monkeypatch.setattr(retrieval, "FastEmbedReranker", Mock())
+    retrieve = Mock(return_value=(Section("PDF page 3", "Seven days."),))
+    monkeypatch.setattr(retrieval.HybridRetriever, "retrieve", retrieve)
+
+    app.radio[0].set_value("Try the sample handbook").run()
+    next(button for button in app.button if "battery claim" in button.label).click().run()
+    app.sidebar.text_input[1].set_value("test-key")
+    app.sidebar.checkbox[0].check().run()
+    for action in ("Ask SparkDocs", "Find local evidence", "Ask SparkDocs"):
+        next(button for button in app.button if button.label == action).click().run()
+        assert not app.exception and not app.error
+        expected = "Local evidence preview" if action.startswith("Find") else "Answer from"
+        assert any(heading.value.startswith(expected) for heading in app.subheader)
+
+    assert provider.generate.call_count == retrieve.call_count == 1
+    app.sidebar.button[0].click().run()
+    assert "sparkdocs_doc_saved_answer" not in app.session_state
+    assert "sparkdocs_doc_saved_evidence" not in app.session_state
