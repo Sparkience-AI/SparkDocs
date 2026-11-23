@@ -12,3 +12,11 @@ build/
 *.egg-info/
 .streamlit/secrets.toml
 local/
+.env.*
+!.env.example
+.envrc
+.envrc.*
+secrets.toml
+*.pem
+*.key
+/benchmark-results/
