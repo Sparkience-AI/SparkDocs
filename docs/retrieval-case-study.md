@@ -4,6 +4,8 @@ SparkDocs sends a language model the evidence it retrieves from one document. I 
 
 ## What I measured
 
+The results below are from single-turn queries. The chat interface was added later.
+
 The study uses six fictional documents, two each in PDF, DOCX, and PPTX. Each document has five labeled questions covering an exact identifier, a paraphrase, similar sections with different rules, a question that needs two passages, and a missing answer. The development and holdout splits use different documents. Treat the current holdout as evaluated. If I tune the pipeline using its misses, I will bring fresh documents for the next holdout.
 
 The runner compares BM25, dense retrieval, hybrid retrieval, and hybrid retrieval with the production reranker. The default run measures BM25 using SparkDocs ingestion, chunking, and keyword scoring. The optional model run uses SparkDocs' FastEmbed models. Each configuration uses the same candidate, final passage, and character budgets. I count how often every required passage reaches the final six and report the rank of the first supporting passage and query time after model construction and document indexing. These short fixtures exercise evidence selection, with limited coverage of long documents and candidate cutoffs.
@@ -38,6 +40,19 @@ With production retrieval feeding the same GPT-6 Luna model, I counted 12 suppor
 The production evidence included both the seven-day outdoor policy and the 30-day indoor policy. Luna gave the seven-day deadline and cited page 3. That recovered the original miss without supplying the labeled passage by hand.
 
 I kept the production pipeline. Dense-only earned a follow-up on fresh documents because it covered the same evidence, ranked the first supporting passage higher, and queried faster on this holdout. This run measures live answer quality for BM25 and the production pipeline. It leaves dense-only answer quality and behavior on longer documents open.
+
+## Follow-up questions in chat
+
+SparkDocs now starts each turn with a fresh evidence search. It can use up to two recent user
+questions, capped at 600 characters in total, as context for retrieval and answer generation.
+The answer shows its own expandable sources. Citation validation checks those sources against
+the evidence selected for that turn.
+
+In a local retrieval check with the built-in Maple sample, the outdoor battery claim question ranked
+page 3 first. The follow-up *What about indoor ones?* ranked page 2 first both with and without the
+earlier question as context. The passages specify seven days outdoors and 30 days indoors. This
+check confirms the expected evidence was retrieved on both turns. It does not establish a ranking
+improvement from context or measure live multi-turn answer quality.
 
 ## Reproduce
 

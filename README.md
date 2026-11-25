@@ -2,7 +2,7 @@
 
 ![SparkDocs project cover](assets/sparkdocs-cover.jpg)
 
-**Status: alpha.** SparkDocs is a local-first document ingestion and grounded Q&A
+**Status: alpha.** SparkDocs is a local-first document ingestion and grounded chat
 tool for PDF, DOCX, and PPTX files. It is intended for people who want to inspect ordinary
 documents with an explicit bring-your-own-key model rather than upload them to a managed document
 store.
@@ -14,6 +14,11 @@ set is sent in one request to the user-selected Gemini, OpenAI, or Anthropic mod
 labels are restricted to retrieved locations;
 SparkDocs does not independently prove that every generated claim is entailed by its citation.
 
+Ask follow-up questions in a conversation about one document. When asking a cloud model, SparkDocs
+can use up to two questions from earlier successful turns with that provider, capped at 600
+characters in total, to retrieve fresh evidence. Open the source expanders beneath an answer to read
+the excerpts for that turn.
+
 ## What it does
 
 - Accepts one PDF, DOCX, or PPTX document up to 10 MiB.
@@ -23,9 +28,9 @@ SparkDocs does not independently prove that every generated claim is entailed by
 - Preserves PDF page, DOCX paragraph/table-row, and PPTX slide locators.
 - Uses local FastEmbed ONNX models for dense retrieval and cross-encoder reranking.
 - Applies a strict evidence budget and rejects citations outside the retrieved-location allowlist.
-- Keeps uploads and extracted content in the active Streamlit process memory only.
-- Sends only character-bounded selected evidence and the escaped question to the explicitly
-  selected Gemini, OpenAI, or Anthropic model using a session-only user key.
+- Keeps uploads, extracted content, and chat history in Streamlit session memory.
+- Sends character-bounded selected evidence, the current question, and bounded recent user questions
+  to the explicitly selected Gemini, OpenAI, or Anthropic model using a session-only user key.
 - Treats document content as untrusted data and does not give it tools or external authority.
 
 ## What it does not do
@@ -71,13 +76,17 @@ locally. Embedding and reranking run on your machine using the installed models.
 1. Under **Document source**, select **Try the sample handbook**. SparkDocs indexes a fictional
    equipment claims handbook using the same pipeline as an uploaded PDF. Allow time for the first
    model downloads during upload or search.
-2. Ask *How long do I have to file a battery claim for a device used outdoors?* Select **Find local
-   evidence** to inspect excerpts without an API key. Page 3 gives the seven-day outdoor deadline.
-   Page 2 describes a separate 30-day indoor deadline.
-3. To try Q&A, choose a cloud provider, enter your key, confirm consent, and select **Ask SparkDocs**.
-   Inspect the cited excerpt for the seven-day deadline. Then ask *How many replacement kits can
-   one member borrow at once?* The handbook describes availability but gives no borrowing limit.
-4. Use **Clear document, provider settings, and keys** to end the walkthrough.
+2. Select **Find local evidence**, fill the chat input with the sample question about the outdoor
+   battery claim deadline, and submit it. Page 3 gives the seven-day outdoor deadline. Page 2
+   describes a separate 30-day indoor deadline. Local evidence lookup works without an API key.
+3. To try cloud chat, choose a provider, enter your key, confirm consent, and select
+   **Ask SparkDocs**. Submit the outdoor question and expand the citation beneath the answer to
+   inspect the seven-day deadline.
+4. Follow up with *What about indoor ones?* Page 2 gives the indoor deadline of 30 days. Each chat
+   answer keeps its own source excerpts. You can also ask *How many replacement kits can one member
+   borrow at once?* The handbook describes availability but gives no borrowing limit.
+5. Replace the document to start a new conversation, or use **Clear document, provider settings,
+   and keys** to end the session.
 
 ## Hosted demo
 
@@ -91,7 +100,9 @@ Use disposable low-quota keys and non-sensitive documents for hosted demos.
 Read the [privacy contract](docs/privacy.md), [security model](docs/security.md), and
 [architecture and limits](docs/architecture.md) before processing documents. Important boundaries:
 
-- The selected cloud provider receives the question and selected excerpts when Q&A is used.
+- The selected cloud provider receives the current question, bounded recent user questions from that
+  provider's successful turns, and freshly selected excerpts when chat sends a request. Earlier
+  answers and local-only questions are excluded from the cloud context.
 - Filename and archive validation reduce common ingestion risks but do not replace malware scanning
   or parser isolation.
 - Parser execution is currently in-process and has no operating-system sandbox or hard wall-clock
@@ -151,8 +162,8 @@ Streamlit UI
     ├── structure-aware overlapping chunks
     │       └── local dense + BM25 retrieval → RRF → cross-encoder reranking
     │
-    └── bounded, escaped evidence prompt
-            └── one grounded provider request + citation allowlist validation
+    └── bounded, escaped question context and evidence
+            └── one grounded provider request + per-answer citation validation
 ```
 
 The shared core lives under `src/sparkdocs`; the current Streamlit UI remains the source-checkout

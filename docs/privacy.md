@@ -8,16 +8,21 @@ Gemini, OpenAI, or Anthropic Claude cloud provider.
 - Uploaded bytes are validated and extracted in the Streamlit process memory.
 - The application does not intentionally write uploads, extracted text, questions, answers, or API
   keys to disk.
-- The document, provider selections, and entered API keys remain in Streamlit session state until
-  the user clears the session, the process restarts, or the hosting platform expires the session.
+- The current document and its chat history remain in Streamlit session state. Replacing or removing
+  the document resets the conversation. Active provider settings and keys are held in session
+  memory and cleared when the session ends or the user clears it.
 - Selecting **Clear document, provider settings, and keys** removes the application-owned session
   values. Python and hosting-platform memory reclamation is not a cryptographic erasure guarantee.
 
 ## Provider transmission
 
 Only after the user checks the provider-specific transmission confirmation and asks a question,
-SparkDocs sends the question, the application-owned grounded-answer instructions, and a
-character-bounded set of locally retrieved excerpts to the selected provider.
+SparkDocs sends the current question, the application-owned grounded-answer instructions, and a
+character-bounded set of freshly retrieved excerpts to the selected provider. A follow-up can also
+include up to two recent user questions from successful turns with that same provider, with a
+total context limit of 600 characters. Previous assistant answers, local-only questions, and
+excerpts from earlier turns are excluded from the cloud conversation context. Local evidence lookup
+makes no provider request.
 Provider processing and retention are governed by the user's account, plan, configuration, and the
 provider's applicable terms. OpenAI requests set `store=false`; this application setting does not
 replace the provider's account-level data controls or policies.
@@ -28,8 +33,7 @@ those local models and is not sent to Hugging Face for inference. The model cach
 the Streamlit session ends, but SparkDocs does not intentionally put document content in that cache.
 
 Each API key is passed directly to a session-owned client. SparkDocs does not copy it into
-environment variables, URLs, logs, caches, or files. Provider-specific keys and model selections
-remain in Streamlit session memory until cleared or the session expires.
+environment variables, URLs, logs, caches, or files.
 
 ## Hosted demo
 
