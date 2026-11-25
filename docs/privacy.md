@@ -1,6 +1,6 @@
 # Privacy and data handling
 
-SparkDocs is local-first, but grounded answer generation uses the explicitly selected Google
+SparkDocs is local-first. General and document answers use the explicitly selected Google
 Gemini, OpenAI, or Anthropic Claude cloud provider.
 
 ## Local application
@@ -17,11 +17,16 @@ Gemini, OpenAI, or Anthropic Claude cloud provider.
 ## Provider transmission
 
 Only after the user checks the provider-specific transmission confirmation and asks a question,
-SparkDocs sends the current question, the application-owned grounded-answer instructions, and a
-character-bounded set of freshly retrieved excerpts to the selected provider. A follow-up can also
+SparkDocs can make a cloud request. A document answer sends the current question, the
+application-owned grounded-answer instructions, and a character-bounded set of freshly retrieved
+excerpts to the selected provider. A follow-up can also
 include up to two recent user questions from successful turns with that same provider, with a
 total context limit of 600 characters. Previous assistant answers, local-only questions, and
-excerpts from earlier turns are excluded from the cloud conversation context. Local evidence lookup
+excerpts from earlier turns are excluded from the document-answer context. In automatic mode with
+a document loaded, the provider may first classify the current question using bounded prior
+document questions. The classification request includes no document excerpts. General answers
+include no document excerpts, and can include up to two prior general exchanges with the same
+provider, capped at 400 question characters and 600 answer characters each. Local evidence lookup
 makes no provider request.
 Provider processing and retention are governed by the user's account, plan, configuration, and the
 provider's applicable terms. OpenAI requests set `store=false`; this application setting does not

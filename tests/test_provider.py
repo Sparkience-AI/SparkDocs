@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -12,6 +14,7 @@ from sparkdocs.providers import (
     OpenAIProvider,
     ProviderKind,
     create_provider,
+    generate_text,
 )
 
 
@@ -139,3 +142,25 @@ def test_all_providers_bound_response_size() -> None:
     for provider in providers:
         with pytest.raises(ProviderResponseLimitError, match="safety limit"):
             provider.generate("hello")
+
+
+def test_openai_stream_emits_only_text_deltas_and_disables_storage() -> None:
+    class Events(list[SimpleNamespace]):
+        def get_final_response(self) -> SimpleNamespace:
+            return SimpleNamespace(status="completed")
+
+    events = Events(
+        [
+            SimpleNamespace(type="response.output_text.delta", delta="Hello"),
+            SimpleNamespace(type="response.reasoning_summary_text.delta", delta="Hidden"),
+            SimpleNamespace(type="response.output_text.delta", delta="!"),
+        ]
+    )
+    stream = Mock(return_value=nullcontext(events))
+    client = SimpleNamespace(responses=SimpleNamespace(stream=stream))
+    provider = OpenAIProvider("test-key", client_factory=lambda **_: client)
+    shown: list[str] = []
+
+    assert generate_text(provider, "hello", shown.append) == "Hello!"
+    assert shown == ["Hello", "!"]
+    assert stream.call_args.kwargs["store"] is False
