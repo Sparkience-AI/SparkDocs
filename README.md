@@ -139,6 +139,11 @@ uv sync --locked --extra mcp
 uv run --locked --extra mcp sparkdocs-mcp --allowed-root ./documents
 ```
 
+On Windows, add `--warm-models` to load both retrieval models before the MCP server accepts
+requests. Allow time for first-use model downloads. To verify the Codex CLI integration from
+PowerShell, run `./scripts/test_codex_mcp.ps1` with a signed-in Codex CLI. The script uses a
+synthetic PDF, checks all four MCP replies, and confirms the document is cleared.
+
 The server holds one document in memory and exposes four tools: `ingest_document`,
 `search_document`, `document_status`, and `clear_document`. It never accepts an API key, generates
 an answer, opens a network listener, or reads outside the configured root. First indexing can still
