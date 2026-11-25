@@ -38,7 +38,7 @@ def assert_no_document(app: AppTest) -> None:
     assert "sparkdocs_document" not in app.session_state
     assert "sparkdocs_index" not in app.session_state
     assert "sparkdocs_upload_digest" not in app.session_state
-    assert not any(widget.label == "Ask SparkDocs" for widget in app.button)
+    assert not app.chat_input
 
 
 def test_removing_upload_clears_document_state(app: AppTest) -> None:
@@ -114,18 +114,9 @@ def test_sample_question_fills_input_without_submitting(app: AppTest) -> None:
     suggestion.click().run()
 
     assert not app.exception
-    assert (
-        app.text_input(
-            key=next(
-                field.key
-                for field in app.text_input
-                if field.label == "Question about this document"
-            )
-        ).value
-        == suggestion.label
-    )
-    assert next(button for button in app.button if button.label == "Ask SparkDocs").disabled
-    assert "sparkdocs_doc_view" not in app.session_state
+    assert app.chat_input[0].proto.value == suggestion.label
+    assert not app.chat_message
+    assert not app.session_state["sparkdocs_doc_chat_history"]
 
 
 def test_switching_sources_drops_the_previous_upload_and_answer(app: AppTest) -> None:
@@ -144,27 +135,62 @@ def test_switching_sources_drops_the_previous_upload_and_answer(app: AppTest) ->
     assert app.file_uploader[0].value is None
 
 
-def test_switching_result_views_reuses_answer_and_evidence(
+def test_chat_keeps_followups_and_citations_across_local_mode(
     app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     provider = Mock()
-    provider.generate.return_value = "Seven days. [PDF page 3]"
+    provider.generate.side_effect = ["Seven days. [PDF page 3]", "Thirty days. [PDF page 2]"]
     monkeypatch.setattr(providers, "create_provider", Mock(return_value=provider))
     monkeypatch.setattr(retrieval, "FastEmbedReranker", Mock())
-    retrieve = Mock(return_value=(Section("PDF page 3", "Seven days."),))
+    outdoor = Section("PDF page 3", "Seven days.")
+    indoor = Section("PDF page 2", "Thirty days.")
+    retrieve = Mock(side_effect=[(outdoor,), (outdoor, indoor), (indoor,)])
     monkeypatch.setattr(retrieval.HybridRetriever, "retrieve", retrieve)
 
     app.radio[0].set_value("Try the sample handbook").run()
-    next(button for button in app.button if "battery claim" in button.label).click().run()
+    mode = app.radio(key="sparkdocs_doc_send_mode")
+    mode.set_value("Ask SparkDocs").run()
+    assert app.chat_input[0].proto.disabled
+    assert provider.generate.call_count == 0
+
     app.sidebar.text_input[1].set_value("test-key")
     app.sidebar.checkbox[0].check().run()
-    for action in ("Ask SparkDocs", "Find local evidence", "Ask SparkDocs"):
-        next(button for button in app.button if button.label == action).click().run()
-        assert not app.exception and not app.error
-        expected = "Local evidence preview" if action.startswith("Find") else "Answer from"
-        assert any(heading.value.startswith(expected) for heading in app.subheader)
+    first = "When is the outdoor battery claim due?"
+    app.chat_input[0].set_value(first).run()
+    assert not app.exception and not app.error
+    assert [item.label for item in app.expander] == ["PDF page 3 (cited)"]
+    assert not app.expander[0].proto.expanded
+    assert len(app.chat_message) == 2
 
-    assert provider.generate.call_count == retrieve.call_count == 1
-    app.sidebar.button[0].click().run()
-    assert "sparkdocs_doc_saved_answer" not in app.session_state
-    assert "sparkdocs_doc_saved_evidence" not in app.session_state
+    app.radio(key="sparkdocs_doc_send_mode").set_value("Find local evidence").run()
+    assert len(app.chat_message) == 2
+    assert provider.generate.call_count == 1
+    app.chat_input[0].set_value(first).run()
+    assert len(app.chat_message) == 4
+    assert retrieve.call_count == 1
+    app.chat_input[0].set_value("Local-only comparison of both rules").run()
+    assert len(app.chat_message) == 6
+    assert provider.generate.call_count == 1
+
+    app.radio(key="sparkdocs_doc_send_mode").set_value("Ask SparkDocs").run()
+    followup = "What about indoor ones?"
+    app.chat_input[0].set_value(followup).run()
+    assert not app.exception and not app.error
+    assert len(app.chat_message) == 8
+    assert [item.label for item in app.expander if "(cited)" in item.label] == [
+        "PDF page 3 (cited)",
+        "PDF page 2 (cited)",
+    ]
+    assert retrieve.call_count == 3
+    assert first in retrieve.call_args.args[1]
+    prompt = provider.generate.call_args.args[0]
+    assert first in prompt and followup in prompt
+    assert "Local-only comparison" not in prompt
+    assert provider.generate.call_count == 2
+    app.run()
+    assert provider.generate.call_count == 2
+    assert len(app.chat_message) == 8
+
+    app.radio[0].set_value("Upload a document").run()
+    assert not app.chat_message
+    assert "sparkdocs_doc_chat_history" not in app.session_state

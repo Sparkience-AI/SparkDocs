@@ -10,10 +10,10 @@ SparkDocs separates the Streamlit interface from a framework-independent core.
 | `retrieval` | Fuse local dense and BM25 candidates with RRF, rerank, and enforce a context budget |
 | `prompts` | Delimit evidence and enforce grounded, no-tools behavior |
 | `providers` | Own session-scoped Gemini, OpenAI Responses, and Anthropic Messages clients |
-| `service` | Coordinate one bounded provider request and validate returned citation labels |
+| `service` | Retrieve evidence using bounded question context, coordinate one provider request, and validate returned citation labels |
 | `mcp_workspace` | Enforce one configured document root and hold one ephemeral local index |
 | `mcp_server` | Expose evidence-only stdio tools; never accept provider credentials |
-| `streamlit_app.py` | Render the UI and translate product-level errors |
+| `streamlit_app.py` | Render chat and per-answer evidence, hold conversation history for the current document, and translate product-level errors |
 
 Default ingestion limits:
 
@@ -29,6 +29,7 @@ Default ingestion limits:
 | Extracted sections | 1,000 |
 | Extracted characters | 1,000,000 |
 | Question characters | 2,000 |
+| Prior question context | Up to two recent user questions, 600 characters total |
 
 The retrieval index and document content remain in process memory. FastEmbed model weights are
 downloaded on first use and may remain in the machine or hosting account's model cache, but user

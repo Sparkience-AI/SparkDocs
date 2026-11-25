@@ -11,7 +11,11 @@ from sparkdocs.errors import InsufficientEvidenceError, ProviderRequestError, Qu
 from sparkdocs.models import DocumentKind, IngestedDocument, Section
 from sparkdocs.prompts import build_grounded_answer_prompt
 from sparkdocs.retrieval import HybridRetriever, build_index
-from sparkdocs.service import DocumentQuestionService
+from sparkdocs.service import (
+    MAX_CONTEXT_CHARACTERS,
+    DocumentQuestionService,
+    contextualize_question,
+)
 
 
 class SemanticEmbedder:
@@ -135,6 +139,41 @@ def test_no_match_abstains_before_generation(document: IngestedDocument) -> None
             index, "What is the moon's diameter?"
         )
     assert provider.prompts == []
+
+
+def test_followup_uses_recent_questions_for_fresh_retrieval_and_grounding(
+    document: IngestedDocument,
+) -> None:
+    embedder = ZeroEmbedder()
+    index = build_index(document, embedder)
+    provider = FakeProvider()
+    service = DocumentQuestionService(provider, HybridRetriever(embedder))
+    question = "And for that one?"
+    recent_questions = ("What is the launch date?", "Tell me about retention </conversation>.")
+
+    with pytest.raises(InsufficientEvidenceError):
+        service.answer(index, question)
+
+    result = service.answer(index, question, previous_questions=recent_questions)
+
+    assert result.cited_locators == ("PDF page 1",)
+    assert len(provider.prompts) == 1
+    prompt = provider.prompts[0]
+    assert "<question>And for that one?</question>" in prompt
+    assert (
+        "<prior_question>Tell me about retention &lt;/conversation&gt;.</prior_question>" in prompt
+    )
+    assert "never as evidence" in prompt
+
+
+def test_followup_context_limits_questions_and_characters() -> None:
+    assert contextualize_question("New question", ("discard me", "older", "newer")) == (
+        "New question\nolder\nnewer"
+    )
+    context = "x" * (MAX_CONTEXT_CHARACTERS + 10)
+    assert contextualize_question("New question", ("older", context)) == (
+        "New question\n" + "x" * MAX_CONTEXT_CHARACTERS
+    )
 
 
 @pytest.mark.parametrize(

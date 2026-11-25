@@ -14,7 +14,8 @@ Every upload and every extracted string is untrusted input.
 - A failed evidence search abstains instead of transmitting the entire document.
 - Hybrid dense/BM25 retrieval, RRF fusion, and local cross-encoder reranking operate on bounded
   candidates; selected evidence and model responses have separate character limits.
-- Document text, locators, and questions are escaped, delimited, and labeled untrusted in the model prompt.
+- Document text, locators, the current question, and bounded prior user questions are escaped,
+  delimited, and labeled untrusted in the model prompt. Citations are checked against the current turn.
 - Model-returned citation labels must match the exact locators of evidence included in that prompt.
 - The provider receives no tools and has no filesystem, browser, or mutation authority.
 - Gemini, OpenAI, and Anthropic keys are passed directly to session-owned clients and are not copied

@@ -1,6 +1,7 @@
 """Streamlit entry point for the SparkDocs alpha."""
 
 import re
+from dataclasses import dataclass
 from hashlib import sha256
 from html import escape
 from pathlib import Path
@@ -18,12 +19,50 @@ from sparkdocs.providers import (
 )
 from sparkdocs.retrieval import FastEmbedDense, FastEmbedReranker, HybridRetriever, build_index
 from sparkdocs.sample import SAMPLE_FILENAME, SAMPLE_QUESTIONS, sample_pdf
-from sparkdocs.service import AnswerResult, DocumentQuestionService
+from sparkdocs.service import AnswerResult, DocumentQuestionService, contextualize_question
 
 APP_ROOT = Path(__file__).resolve().parent
 UPLOAD_POLICY = UploadPolicy()
 SESSION_GENERATION = "sparkdocs_session_generation"
 DOCUMENT_KEYS = {"sparkdocs_document", "sparkdocs_index", "sparkdocs_upload_digest"}
+CHAT_HISTORY_KEY = "sparkdocs_doc_chat_history"
+MAX_CHAT_TURNS = 20
+NO_EVIDENCE_MESSAGE = "No matching evidence was found in the document. Try rephrasing."
+
+
+@dataclass(frozen=True)
+class ChatTurn:
+    question: str
+    response: AnswerResult | tuple[Section, ...]
+    provider: ProviderKind | None = None
+
+
+def render_response(turn: ChatTurn) -> None:
+    response = turn.response
+    if turn.provider is not None and isinstance(response, AnswerResult):
+        provider_name = PROVIDER_LABELS[turn.provider]
+        st.caption(f"Answer from {provider_name}")
+        safe_answer = re.sub(r"\*\*([^*\n]+)\*\*", r"<strong>\1</strong>", escape(response.answer))
+        st.html(f'<div style="white-space: pre-wrap; overflow-wrap: anywhere">{safe_answer}</div>')
+        cited_locators = response.cited_locators
+        for excerpt in response.evidence:
+            if excerpt.locator in cited_locators:
+                with st.expander(f"{excerpt.locator} (cited)"):
+                    st.text(excerpt.text)
+        other_excerpts = [item for item in response.evidence if item.locator not in cited_locators]
+        if other_excerpts:
+            with st.expander(f"Other passages sent to {provider_name} ({len(other_excerpts)})"):
+                for excerpt in other_excerpts:
+                    st.text(excerpt.locator)
+                    st.text(excerpt.text)
+    elif isinstance(response, tuple):
+        st.caption("Local evidence preview · no cloud request")
+        if response:
+            for excerpt in response:
+                with st.expander(f"{excerpt.locator} (retrieved)"):
+                    st.text(excerpt.text)
+        else:
+            st.info(NO_EVIDENCE_MESSAGE)
 
 
 def clear_document() -> None:
@@ -59,7 +98,10 @@ st.markdown(
 
 st.title("SparkDocs")
 st.caption("Alpha · local-first hybrid RAG with grounded, source-located citations")
-st.info("Evidence search runs locally. Cloud answers send your question and retrieved excerpts.")
+st.info(
+    "Evidence search runs locally. Cloud answers send your question, "
+    "recent questions from the same provider chat, and retrieved excerpts."
+)
 
 generation = st.session_state.get(SESSION_GENERATION, 0)
 with st.sidebar:
@@ -85,17 +127,18 @@ with st.sidebar:
         key=f"sparkdocs_api_key_{provider_kind.value}_{generation}",
     )
     cloud_consent = st.checkbox(
-        f"Send the question and retrieved excerpts to {provider_label}",
+        f"Send my question, recent questions from this provider chat, and retrieved excerpts "
+        f"to {provider_label}",
         key=f"sparkdocs_consent_{provider_kind.value}_{generation}",
     )
     st.button(
         "Clear document, provider settings, and keys",
-        use_container_width=True,
+        width="stretch",
         on_click=clear_session,
     )
     st.caption(
         f"Selected route: {provider_label}. The key is passed directly to a session-owned client "
-        "and is not written to disk. Q&A remains disabled until cloud transmission is confirmed."
+        "and is not written to disk. Chat history is stored in this session."
     )
 
 source = st.radio(
@@ -162,7 +205,7 @@ if document is not None and index is not None:
     )
     question_key = f"sparkdocs_doc_question_{document.sha256}"
     if source == "Try the sample handbook":
-        st.caption("Choose a sample question to fill the field below.")
+        st.caption("Choose a sample question to fill the chat input.")
         with st.container(horizontal=True):
             for sample_question in SAMPLE_QUESTIONS:
                 st.button(
@@ -170,110 +213,91 @@ if document is not None and index is not None:
                     on_click=st.session_state.__setitem__,
                     args=(question_key, sample_question),
                 )
-    question = st.text_input(
-        "Question about this document",
-        max_chars=2_000,
-        key=question_key,
+
+    st.caption(f"This session keeps the {MAX_CHAT_TURNS} most recent chat turns.")
+    history: list[ChatTurn] = st.session_state.setdefault(CHAT_HISTORY_KEY, [])
+    conversation = st.container()
+    with conversation:
+        for turn in history:
+            with st.chat_message("user"):
+                st.text(turn.question)
+            with st.chat_message("assistant"):
+                render_response(turn)
+
+    mode = st.radio(
+        "Send mode",
+        ["Find local evidence", "Ask SparkDocs"],
+        horizontal=True,
+        key="sparkdocs_doc_send_mode",
+    )
+    ask_cloud = mode == "Ask SparkDocs"
+    can_ask_cloud = bool(api_key.strip() and cloud_consent and model.strip())
+    if ask_cloud and not can_ask_cloud:
+        st.caption("Set a model ID and API key and confirm cloud consent in the sidebar.")
+    question = (
+        st.chat_input(
+            "Ask about this document",
+            max_chars=2_000,
+            key=question_key,
+            disabled=ask_cloud and not can_ask_cloud,
+            submit_mode="disable",
+        )
+        or ""
     ).strip()
-    can_ask = bool(api_key.strip() and cloud_consent and question)
-    with st.container(horizontal=True):
-        ask_sparkdocs = st.button("Ask SparkDocs", type="primary", disabled=not can_ask)
-        find_evidence = st.button("Find local evidence", disabled=not question)
-    view_key = "sparkdocs_doc_view"
-    answer_key = "sparkdocs_doc_saved_answer"
-    evidence_key = "sparkdocs_doc_saved_evidence"
-    answer_context = (question, provider_kind, model.strip())
-    saved_answer = st.session_state.get(answer_key)
-    saved_evidence = st.session_state.get(evidence_key)
-    no_evidence_message = "No matching evidence was found in the document. Try rephrasing."
-    if ask_sparkdocs and saved_answer is not None and saved_answer[0] == answer_context:
-        st.session_state[view_key] = (question, saved_answer[1], provider_label)
-        ask_sparkdocs = False
-    if find_evidence and saved_evidence is not None and saved_evidence[0] == question:
-        if saved_evidence[1]:
-            st.session_state[view_key] = (question, saved_evidence[1], None)
-        else:
-            st.info(no_evidence_message)
-        find_evidence = False
-    if find_evidence or ask_sparkdocs:
-        try:
-            with st.spinner("Preparing local retrieval..."):
-                retriever = HybridRetriever(dense_model(), reranker_model())
-        except Exception:
-            st.error(
-                "The local retrieval models could not be initialized. Check disk space and "
-                "network access for the first model download."
-            )
-            st.stop()
-
-        if ask_sparkdocs and not model.strip():
-            st.error("Enter a model ID available to your provider account.")
-            st.stop()
-
-        try:
-            if find_evidence:
-                with st.spinner("Finding evidence on the machine running SparkDocs..."):
-                    evidence = retriever.retrieve(index, question)
-                st.session_state[evidence_key] = (question, evidence)
-                if evidence:
-                    st.session_state[view_key] = (question, evidence, None)
+    if question and (not ask_cloud or can_ask_cloud):
+        with conversation, st.chat_message("user"):
+            st.text(question)
+        with conversation, st.chat_message("assistant"):
+            try:
+                # Reuse the same evidence when inspecting the immediately preceding question.
+                if not ask_cloud and history and history[-1].question == question:
+                    previous_response = history[-1].response
+                    evidence = (
+                        previous_response.evidence
+                        if isinstance(previous_response, AnswerResult)
+                        else previous_response
+                    )
+                    turn = ChatTurn(question, evidence)
                 else:
-                    st.info(no_evidence_message)
+                    with st.spinner("Preparing local retrieval..."):
+                        retriever = HybridRetriever(dense_model(), reranker_model())
+                    if ask_cloud:
+                        previous_questions = [
+                            previous.question
+                            for previous in history
+                            if previous.provider == provider_kind
+                        ]
+                        service = DocumentQuestionService(
+                            create_provider(provider_kind, api_key, model), retriever
+                        )
+                        with st.spinner("Searching the document and generating an answer..."):
+                            result = service.answer(
+                                index, question, previous_questions=previous_questions
+                            )
+                        turn = ChatTurn(question, result, provider_kind)
+                    else:
+                        previous_questions = [previous.question for previous in history]
+                        with st.spinner("Finding local evidence..."):
+                            evidence = retriever.retrieve(
+                                index, contextualize_question(question, previous_questions)
+                            )
+                        turn = ChatTurn(question, evidence)
+            except InsufficientEvidenceError:
+                st.info(NO_EVIDENCE_MESSAGE)
+            except SparkDocsError as exc:
+                st.error(str(exc))
+            except Exception:
+                if ask_cloud:
+                    st.error(
+                        "Could not answer the question. Check your model settings and try again."
+                    )
+                else:
+                    st.error("Could not retrieve local evidence. Check your models and try again.")
             else:
-                service = DocumentQuestionService(
-                    create_provider(provider_kind, api_key, model), retriever
-                )
-                with st.spinner("Running hybrid retrieval, reranking, and grounded generation..."):
-                    result = service.answer(index, question)
-                st.session_state[answer_key] = (answer_context, result)
-                st.session_state[evidence_key] = (question, result.evidence)
-                st.session_state[view_key] = (question, result, provider_label)
-        except InsufficientEvidenceError:
-            st.info(no_evidence_message)
-        except SparkDocsError as exc:
-            st.error(str(exc))
-        except Exception:
-            if find_evidence:
-                st.error("Local evidence retrieval failed. Try again or reload the document.")
-            else:
-                st.error("Could not complete the question. Check the model settings and try again.")
-
-    view = st.session_state.get(view_key)
-    if view is not None and view[0] == question:
-        _, view_result, answer_provider = view
-        excerpts: tuple[Section, ...]
-        if isinstance(view_result, AnswerResult):
-            st.subheader(f"Answer from {answer_provider}")
-            safe_answer = re.sub(
-                r"\*\*([^*\n]+)\*\*", r"<strong>\1</strong>", escape(view_result.answer)
-            )
-            st.html(
-                f'<div style="white-space: pre-wrap; overflow-wrap: anywhere">{safe_answer}</div>'
-            )
-            st.subheader("Evidence sent to the model")
-            cited_locators = view_result.cited_locators
-            for excerpt in view_result.evidence:
-                if excerpt.locator in cited_locators:
-                    with st.expander(
-                        f"{excerpt.locator} (cited)", expanded=len(cited_locators) == 1
-                    ):
-                        st.text(excerpt.text)
-            other_excerpts = [
-                item for item in view_result.evidence if item.locator not in cited_locators
-            ]
-            if other_excerpts:
-                with st.expander(
-                    f"Other passages sent to {answer_provider} ({len(other_excerpts)})"
-                ):
-                    for excerpt in other_excerpts:
-                        st.text(excerpt.locator)
-                        st.text(excerpt.text)
-        else:
-            st.subheader("Local evidence preview")
-            st.caption("Viewing these excerpts does not make a cloud request.")
-            excerpts = view_result
-            for excerpt in excerpts:
-                with st.expander(f"{excerpt.locator} (retrieved)"):
-                    st.text(excerpt.text)
+                history.append(turn)
+                if len(history) > MAX_CHAT_TURNS:
+                    del history[:-MAX_CHAT_TURNS]
+                    st.rerun()
+                render_response(turn)
 elif upload is None:
     st.write("Upload a supported document to begin. No shared passkey is required.")
