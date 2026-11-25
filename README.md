@@ -88,6 +88,11 @@ locally. Embedding and reranking run on your machine using the installed models.
 5. Replace the document to start a new conversation, or use **Clear document, provider settings,
    and keys** to end the session.
 
+Each chat tab keeps its own conversation. **Ask SparkDocs** automatically chooses between general and document answers when a document is
+loaded. **Document only** always uses retrieved sources. **General chat** works without a document,
+and **Find local evidence** makes no provider request. Supported providers stream replies, with
+document citations checked before the answer is retained in the conversation.
+
 ## Hosted demo
 
 The historical demo URL is <https://sparkdocs.streamlit.app/>. The local sample above is the

@@ -8,10 +8,32 @@ from streamlit.testing.v1 import AppTest
 
 from sparkdocs import providers, retrieval
 from sparkdocs.models import Section
-from sparkdocs.sample import SAMPLE_FILENAME, sample_pdf
+from sparkdocs.sample import SAMPLE_FILENAME, SAMPLE_QUESTIONS, sample_pdf
 
 APP_PATH = Path(__file__).parents[1] / "streamlit_app.py"
 PDF_MIME_TYPE = "application/pdf"
+
+
+@pytest.mark.parametrize("load_document", [False, True])
+def test_general_chat_without_retrieval(
+    app: AppTest, monkeypatch: pytest.MonkeyPatch, load_document: bool
+) -> None:
+    provider = Mock()
+    provider.generate.side_effect = ["GENERAL", "Paris."] if load_document else ["Paris."]
+    monkeypatch.setattr(providers, "create_provider", Mock(return_value=provider))
+    retrieve = Mock()
+    monkeypatch.setattr(retrieval.HybridRetriever, "retrieve", retrieve)
+    if load_document:
+        app.radio[0].set_value("Try the sample handbook").run()
+    app.sidebar.text_input[1].set_value("test-key")
+    app.sidebar.checkbox[0].check().run()
+    app.chat_input[0].set_value("What is the capital of France?").run()
+    assert not app.error and not app.exception
+    assert any("General answer" in caption.value for caption in app.caption)
+    assert not app.expander
+    assert provider.generate.call_count == (2 if load_document else 1)
+    assert all("Maple" not in call.args[0] for call in provider.generate.call_args_list)
+    retrieve.assert_not_called()
 
 
 class LocalTestEmbedder:
@@ -38,7 +60,12 @@ def assert_no_document(app: AppTest) -> None:
     assert "sparkdocs_document" not in app.session_state
     assert "sparkdocs_index" not in app.session_state
     assert "sparkdocs_upload_digest" not in app.session_state
-    assert not app.chat_input
+    assert [tab.label for tab in app.tabs] == [
+        "Ask SparkDocs",
+        "Document only",
+        "General chat",
+        "Find local evidence",
+    ]
 
 
 def test_removing_upload_clears_document_state(app: AppTest) -> None:
@@ -110,13 +137,13 @@ def test_sample_can_be_cleared_back_to_empty_upload(app: AppTest) -> None:
 
 def test_sample_question_fills_input_without_submitting(app: AppTest) -> None:
     app.radio[0].set_value("Try the sample handbook").run()
-    suggestion = next(button for button in app.button if "battery claim" in button.label)
+    suggestion = next(button for button in app.button if button.label == "Outdoor claim deadline")
     suggestion.click().run()
 
     assert not app.exception
-    assert app.chat_input[0].proto.value == suggestion.label
+    assert app.chat_input[0].proto.value == SAMPLE_QUESTIONS[0]
     assert not app.chat_message
-    assert not app.session_state["sparkdocs_doc_chat_history"]
+    assert not app.session_state["sparkdocs_doc_chat_history_ask"]
 
 
 def test_switching_sources_drops_the_previous_upload_and_answer(app: AppTest) -> None:
@@ -148,35 +175,38 @@ def test_chat_keeps_followups_and_citations_across_local_mode(
     monkeypatch.setattr(retrieval.HybridRetriever, "retrieve", retrieve)
 
     app.radio[0].set_value("Try the sample handbook").run()
-    mode = app.radio(key="sparkdocs_doc_send_mode")
-    mode.set_value("Ask SparkDocs").run()
+    app.session_state["sparkdocs_active_tab"] = "Document only"
+    app.run()
     assert app.chat_input[0].proto.disabled
     assert provider.generate.call_count == 0
 
     app.sidebar.text_input[1].set_value("test-key")
     app.sidebar.checkbox[0].check().run()
     first = "When is the outdoor battery claim due?"
+    app.session_state["sparkdocs_active_tab"] = "Document only"
+    app.run()
     app.chat_input[0].set_value(first).run()
     assert not app.exception and not app.error
     assert [item.label for item in app.expander] == ["PDF page 3 (cited)"]
     assert not app.expander[0].proto.expanded
     assert len(app.chat_message) == 2
 
-    app.radio(key="sparkdocs_doc_send_mode").set_value("Find local evidence").run()
+    assert provider.generate.call_count == 1
+    app.session_state["sparkdocs_active_tab"] = "Find local evidence"
+    app.run()
+    assert not app.chat_message
+    assert len(app.chat_input) == 1
+    app.chat_input[0].set_value("Local-only comparison of both rules").run()
     assert len(app.chat_message) == 2
     assert provider.generate.call_count == 1
-    app.chat_input[0].set_value(first).run()
-    assert len(app.chat_message) == 4
-    assert retrieve.call_count == 1
-    app.chat_input[0].set_value("Local-only comparison of both rules").run()
-    assert len(app.chat_message) == 6
-    assert provider.generate.call_count == 1
 
-    app.radio(key="sparkdocs_doc_send_mode").set_value("Ask SparkDocs").run()
     followup = "What about indoor ones?"
+    app.session_state["sparkdocs_active_tab"] = "Document only"
+    app.run()
+    assert len(app.chat_message) == 2
     app.chat_input[0].set_value(followup).run()
     assert not app.exception and not app.error
-    assert len(app.chat_message) == 8
+    assert len(app.chat_message) == 4
     assert [item.label for item in app.expander if "(cited)" in item.label] == [
         "PDF page 3 (cited)",
         "PDF page 2 (cited)",
@@ -189,8 +219,9 @@ def test_chat_keeps_followups_and_citations_across_local_mode(
     assert provider.generate.call_count == 2
     app.run()
     assert provider.generate.call_count == 2
-    assert len(app.chat_message) == 8
+    assert len(app.chat_message) == 4
 
     app.radio[0].set_value("Upload a document").run()
     assert not app.chat_message
-    assert "sparkdocs_doc_chat_history" not in app.session_state
+    key = "sparkdocs_doc_chat_history_document"
+    assert key not in app.session_state or not app.session_state[key]

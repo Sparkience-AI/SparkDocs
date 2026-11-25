@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from html import escape
 from pathlib import Path
+from time import monotonic
 
 import streamlit as st
 
@@ -19,7 +20,13 @@ from sparkdocs.providers import (
 )
 from sparkdocs.retrieval import FastEmbedDense, FastEmbedReranker, HybridRetriever, build_index
 from sparkdocs.sample import SAMPLE_FILENAME, SAMPLE_QUESTIONS, sample_pdf
-from sparkdocs.service import AnswerResult, DocumentQuestionService, contextualize_question
+from sparkdocs.service import (
+    AnswerResult,
+    DocumentQuestionService,
+    answer_general,
+    contextualize_question,
+    needs_document,
+)
 
 APP_ROOT = Path(__file__).resolve().parent
 UPLOAD_POLICY = UploadPolicy()
@@ -33,25 +40,35 @@ NO_EVIDENCE_MESSAGE = "No matching evidence was found in the document. Try rephr
 @dataclass(frozen=True)
 class ChatTurn:
     question: str
-    response: AnswerResult | tuple[Section, ...]
+    response: AnswerResult | tuple[Section, ...] | str
     provider: ProviderKind | None = None
 
 
-def render_response(turn: ChatTurn) -> None:
+def render_response(turn: ChatTurn, *, animate: bool = False) -> None:
     response = turn.response
-    if turn.provider is not None and isinstance(response, AnswerResult):
+    if turn.provider is not None and isinstance(response, (AnswerResult, str)):
+        if isinstance(response, AnswerResult):
+            st.caption("Document answer")
+        else:
+            st.caption("General answer · No document excerpts sent")
+        text = response.answer if isinstance(response, AnswerResult) else response
+        safe_answer = re.sub(r"\*\*([^*\n]+)\*\*", r"<strong>\1</strong>", escape(text))
+        appearance = " sparkdocs-new-answer" if animate else ""
+        st.html(f'<div class="sparkdocs-answer{appearance}">{safe_answer}</div>')
+        if isinstance(response, str):
+            return
         provider_name = PROVIDER_LABELS[turn.provider]
-        st.caption(f"Answer from {provider_name}")
-        safe_answer = re.sub(r"\*\*([^*\n]+)\*\*", r"<strong>\1</strong>", escape(response.answer))
-        st.html(f'<div style="white-space: pre-wrap; overflow-wrap: anywhere">{safe_answer}</div>')
         cited_locators = response.cited_locators
         for excerpt in response.evidence:
             if excerpt.locator in cited_locators:
-                with st.expander(f"{excerpt.locator} (cited)"):
+                with st.expander(f"{excerpt.locator} (cited)", icon=":material/verified:"):
                     st.text(excerpt.text)
         other_excerpts = [item for item in response.evidence if item.locator not in cited_locators]
         if other_excerpts:
-            with st.expander(f"Other passages sent to {provider_name} ({len(other_excerpts)})"):
+            with st.expander(
+                f"Other passages sent to {provider_name} ({len(other_excerpts)})",
+                icon=":material/folder_open:",
+            ):
                 for excerpt in other_excerpts:
                     st.text(excerpt.locator)
                     st.text(excerpt.text)
@@ -96,16 +113,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("SparkDocs")
-st.caption("Alpha · local-first hybrid RAG with grounded, source-located citations")
-st.info(
-    "Evidence search runs locally. Cloud answers send your question, "
-    "recent questions from the same provider chat, and retrieved excerpts."
+st.html(
+    '<header class="sparkdocs-brand"><span class="sparkdocs-mark" aria-hidden="true">'
+    "✦</span><h1>SparkDocs</h1></header>"
 )
 
 generation = st.session_state.get(SESSION_GENERATION, 0)
 with st.sidebar:
-    st.subheader("Session controls")
+    st.subheader("Settings")
     provider_kind = ProviderKind(
         st.selectbox(
             "Cloud provider",
@@ -127,8 +142,8 @@ with st.sidebar:
         key=f"sparkdocs_api_key_{provider_kind.value}_{generation}",
     )
     cloud_consent = st.checkbox(
-        f"Send my question, recent questions from this provider chat, and retrieved excerpts "
-        f"to {provider_label}",
+        f"Send my messages and limited chat context to {provider_label}. "
+        "Document answers also send matching excerpts.",
         key=f"sparkdocs_consent_{provider_kind.value}_{generation}",
     )
     st.button(
@@ -163,7 +178,8 @@ else:
     )
 
 if upload is None:
-    clear_document()
+    if st.session_state.get("sparkdocs_upload_digest") is not None:
+        clear_document()
 else:
     filename, media_type, content = upload
     digest_key = (filename, media_type, sha256(content).hexdigest())
@@ -195,59 +211,80 @@ else:
 document = st.session_state.get("sparkdocs_document")
 index = st.session_state.get("sparkdocs_index")
 if document is not None and index is not None:
-    st.success(
-        f"Ready: {document.kind.upper()} · {len(document.sections)} sections · "
-        f"{document.character_count:,} extracted characters"
+    display_name = (
+        "Maple claims handbook" if source == "Try the sample handbook" else document.filename
     )
-    st.caption(
-        f"Indexed {len(index.chunks)} structure-aware chunks in memory. Answers must cite only "
-        "retrieved locations; citations still require user verification."
+    st.html(
+        '<div class="sparkdocs-document"><span class="sparkdocs-ready">Ready</span>'
+        f"<strong>{escape(display_name)}</strong><span>{document.kind.upper()} · "
+        f"{len(document.sections)} sections</span></div>"
     )
-    question_key = f"sparkdocs_doc_question_{document.sha256}"
-    if source == "Try the sample handbook":
-        st.caption("Choose a sample question to fill the chat input.")
+
+
+def render_chat(mode: str, slug: str, *, available: bool) -> None:
+    question_key = f"sparkdocs_doc_question_{slug}"
+    history: list[ChatTurn] = st.session_state.setdefault(f"{CHAT_HISTORY_KEY}_{slug}", [])
+    if not available:
+        st.caption("Upload a document or choose the sample handbook to start here.")
+    if (
+        available
+        and index is not None
+        and slug != "general"
+        and source == "Try the sample handbook"
+    ):
         with st.container(horizontal=True):
-            for sample_question in SAMPLE_QUESTIONS:
+            for label, sample_question in zip(
+                ("Outdoor claim deadline", "Replacement kit limit"), SAMPLE_QUESTIONS, strict=True
+            ):
                 st.button(
-                    sample_question,
+                    label,
+                    key=f"sparkdocs_doc_sample_{slug}_{label}",
                     on_click=st.session_state.__setitem__,
                     args=(question_key, sample_question),
                 )
-
-    st.caption(f"This session keeps the {MAX_CHAT_TURNS} most recent chat turns.")
-    history: list[ChatTurn] = st.session_state.setdefault(CHAT_HISTORY_KEY, [])
     conversation = st.container()
     with conversation:
+        if not history:
+            intro = st.empty()
+            intro.html(f'<div class="sparkdocs-intro"><h2>{mode}</h2></div>')
         for turn in history:
-            with st.chat_message("user"):
-                st.text(turn.question)
-            with st.chat_message("assistant"):
+            with st.chat_message("user", avatar=":material/person:"):
+                st.html(f'<div class="sparkdocs-user">{escape(turn.question)}</div>')
+            with st.chat_message("assistant", avatar=":material/description:"):
                 render_response(turn)
 
-    mode = st.radio(
-        "Send mode",
-        ["Find local evidence", "Ask SparkDocs"],
-        horizontal=True,
-        key="sparkdocs_doc_send_mode",
-    )
-    ask_cloud = mode == "Ask SparkDocs"
+    ask_cloud = mode != "Find local evidence"
     can_ask_cloud = bool(api_key.strip() and cloud_consent and model.strip())
     if ask_cloud and not can_ask_cloud:
         st.caption("Set a model ID and API key and confirm cloud consent in the sidebar.")
     question = (
-        st.chat_input(
-            "Ask about this document",
+        st.bottom.chat_input(
+            "Message SparkDocs",
             max_chars=2_000,
             key=question_key,
-            disabled=ask_cloud and not can_ask_cloud,
+            disabled=not available or (ask_cloud and not can_ask_cloud),
             submit_mode="disable",
         )
         or ""
     ).strip()
-    if question and (not ask_cloud or can_ask_cloud):
-        with conversation, st.chat_message("user"):
-            st.text(question)
-        with conversation, st.chat_message("assistant"):
+    if available and question and (not ask_cloud or can_ask_cloud):
+        if not history:
+            intro.empty()
+        with conversation, st.chat_message("user", avatar=":material/person:"):
+            st.html(f'<div class="sparkdocs-user">{escape(question)}</div>')
+        with conversation, st.chat_message("assistant", avatar=":material/description:"):
+            preview = st.empty()
+            chunks: list[str] = []
+            last_draw = 0.0
+
+            def show_delta(delta: str) -> None:
+                nonlocal last_draw
+                chunks.append(delta)
+                now = monotonic()
+                if now - last_draw >= 0.05:
+                    preview.text("".join(chunks))
+                    last_draw = now
+
             try:
                 # Reuse the same evidence when inspecting the immediately preceding question.
                 if not ask_cloud and history and history[-1].question == question:
@@ -258,30 +295,52 @@ if document is not None and index is not None:
                         else previous_response
                     )
                     turn = ChatTurn(question, evidence)
-                else:
-                    with st.spinner("Preparing local retrieval..."):
-                        retriever = HybridRetriever(dense_model(), reranker_model())
-                    if ask_cloud:
-                        previous_questions = [
-                            previous.question
-                            for previous in history
-                            if previous.provider == provider_kind
-                        ]
-                        service = DocumentQuestionService(
-                            create_provider(provider_kind, api_key, model), retriever
+                elif ask_cloud:
+                    provider = create_provider(provider_kind, api_key, model)
+                    previous_questions = [
+                        previous.question
+                        for previous in history
+                        if previous.provider == provider_kind
+                        and isinstance(previous.response, AnswerResult)
+                    ]
+                    with st.spinner("Choosing how to answer..."):
+                        use_document = index is not None and (
+                            mode == "Document only"
+                            or (
+                                mode == "Ask SparkDocs"
+                                and needs_document(provider, question, previous_questions)
+                            )
                         )
-                        with st.spinner("Searching the document and generating an answer..."):
+                    if use_document:
+                        service = DocumentQuestionService(
+                            provider, HybridRetriever(dense_model(), reranker_model())
+                        )
+                        with st.spinner("Searching sources and checking citations..."):
                             result = service.answer(
-                                index, question, previous_questions=previous_questions
+                                index,
+                                question,
+                                previous_questions=previous_questions,
+                                on_delta=show_delta,
                             )
                         turn = ChatTurn(question, result, provider_kind)
                     else:
-                        previous_questions = [previous.question for previous in history]
-                        with st.spinner("Finding local evidence..."):
-                            evidence = retriever.retrieve(
-                                index, contextualize_question(question, previous_questions)
-                            )
-                        turn = ChatTurn(question, evidence)
+                        exchanges = [
+                            (previous.question, previous.response)
+                            for previous in history
+                            if previous.provider == provider_kind
+                            and isinstance(previous.response, str)
+                        ]
+                        with st.spinner("Writing an answer..."):
+                            response = answer_general(provider, question, exchanges, show_delta)
+                        turn = ChatTurn(question, response, provider_kind)
+                else:
+                    previous_questions = [previous.question for previous in history]
+                    with st.spinner("Finding local evidence..."):
+                        retriever = HybridRetriever(dense_model(), reranker_model())
+                        evidence = retriever.retrieve(
+                            index, contextualize_question(question, previous_questions)
+                        )
+                    turn = ChatTurn(question, evidence)
             except InsufficientEvidenceError:
                 st.info(NO_EVIDENCE_MESSAGE)
             except SparkDocsError as exc:
@@ -298,6 +357,23 @@ if document is not None and index is not None:
                 if len(history) > MAX_CHAT_TURNS:
                     del history[:-MAX_CHAT_TURNS]
                     st.rerun()
-                render_response(turn)
-elif upload is None:
-    st.write("Upload a supported document to begin. No shared passkey is required.")
+                render_response(turn, animate=True)
+            finally:
+                preview.empty()
+
+
+chat_modes = (
+    ("Ask SparkDocs", "ask"),
+    ("Document only", "document"),
+    ("General chat", "general"),
+    ("Find local evidence", "evidence"),
+)
+with st.container(key="sparkdocs_chat_panel"):
+    tabs = st.tabs(
+        [label for label, _ in chat_modes], key="sparkdocs_active_tab", on_change="rerun"
+    )
+    for tab, (label, slug) in zip(tabs, chat_modes, strict=True):
+        if not tab.open:
+            continue
+        with tab:
+            render_chat(label, slug, available=slug in {"ask", "general"} or index is not None)

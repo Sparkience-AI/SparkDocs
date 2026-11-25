@@ -1,3 +1,70 @@
 [data-testid="stMainBlockContainer"] {
-    padding-top: 4rem;
+    padding-top: 3.1rem;
+    max-width: 69rem;
+}
+
+.sparkdocs-brand { display: flex; align-items: center; gap: .75rem; margin-bottom: .35rem; }
+.sparkdocs-brand h1 { font-size: 1.55rem; padding: 0; letter-spacing: -.045em; }
+.sparkdocs-mark, .sparkdocs-intro span {
+    display: inline-grid;
+    place-items: center;
+    width: 2.2rem;
+    aspect-ratio: 1;
+    border-radius: .7rem;
+    color: #211A11;
+    background: #E8BB76;
+}
+.sparkdocs-intro {
+    text-align: center;
+    padding: clamp(1.4rem, 6vh, 4rem) .8rem;
+    background: transparent;
+    border-radius: 1rem;
+}
+.sparkdocs-intro h2 { font-size: clamp(1.3rem, 4vw, 2.1rem); letter-spacing: -.05em; }
+.sparkdocs-intro p { color: #B7B5AF; margin: 0; }
+
+.st-key-sparkdocs_chat_panel [data-testid="stChatMessage"] { gap: .7rem; }
+.st-key-sparkdocs_chat_panel [data-testid="stChatMessage"]:has(.sparkdocs-user) {
+    background: transparent;
+}
+.st-key-sparkdocs_chat_panel [role="tablist"] { gap: .55rem; }
+.st-key-sparkdocs_chat_panel [role="tab"] { padding-inline: .65rem; }
+.sparkdocs-user {
+    padding: .55rem .85rem;
+    border-radius: .8rem;
+    background: #26282C;
+    color: #F1EEE8;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.sparkdocs-document {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.85rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid #383A3F;
+    border-radius: 0.7rem;
+    background: #202226;
+    overflow-wrap: anywhere;
+}
+
+.sparkdocs-document span { color: #B7B5AF; }
+.sparkdocs-document .sparkdocs-ready { color: #E8BB76; }
+
+.sparkdocs-answer {
+    max-width: 72ch;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .sparkdocs-new-answer { animation: sparkdocs-answer-in 180ms ease-out both; }
+}
+
+@keyframes sparkdocs-answer-in {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
 }

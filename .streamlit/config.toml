@@ -4,3 +4,19 @@ maxUploadSize = 10
 
 [browser]
 gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+
+[theme]
+base = "dark"
+primaryColor = "#E8BB76"
+backgroundColor = "#141517"
+secondaryBackgroundColor = "#202226"
+textColor = "#F1EEE8"
+borderColor = "#383A3F"
+baseRadius = "0.85rem"
+
+[theme.sidebar]
+backgroundColor = "#191A1D"
+secondaryBackgroundColor = "#26282C"

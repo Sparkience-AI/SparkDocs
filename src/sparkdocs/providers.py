@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from enum import StrEnum
 from typing import Any, Protocol, cast
 
@@ -89,6 +89,45 @@ def _enforce_response_limit(text: str, limit: int) -> str:
     return text
 
 
+def generate_text(
+    provider: TextProvider, prompt: str, on_delta: Callable[[str], None] | None = None
+) -> str:
+    stream = getattr(type(provider), "stream_text", None)
+    if on_delta is None or stream is None:
+        return provider.generate(prompt)
+    parts = []
+    with_stream = stream(provider, prompt)
+    try:
+        for text in with_stream:
+            parts.append(text)
+            on_delta(text)
+    except APIStatusError as exc:
+        detail = str(exc.message).lower()
+        if (
+            not parts
+            and exc.status_code in (400, 422)
+            and "stream" in detail
+            and ("not supported" in detail or "does not support" in detail)
+        ):
+            return provider.generate(prompt)
+        raise
+    finally:
+        with_stream.close()
+    if not parts:
+        raise ProviderRequestError("The model did not return any text.")
+    return "".join(parts)
+
+
+def _bounded_deltas(deltas: Iterable[str], limit: int) -> Iterator[str]:
+    characters = 0
+    for text in deltas:
+        if text:
+            characters += len(text)
+            if characters > limit:
+                raise ProviderResponseLimitError("The model response exceeded the safety limit.")
+            yield text
+
+
 class GeminiProvider:
     """Gemini client whose key remains scoped to the active app session."""
 
@@ -109,15 +148,14 @@ class GeminiProvider:
         self._max_response_characters = max_response_characters
 
     def generate(self, prompt: str) -> str:
-        parts: list[str] = []
-        characters = 0
-        for chunk in self._client.stream([HumanMessage(content=prompt)]):
-            content = str(chunk.content)
-            characters += len(content)
-            if characters > self._max_response_characters:
-                raise ProviderResponseLimitError("The model response exceeded the safety limit.")
-            parts.append(content)
-        return "".join(parts)
+        return "".join(self.stream_text(prompt))
+
+    def stream_text(self, prompt: str) -> Iterator[str]:
+        chunks = self._client.stream([HumanMessage(content=prompt)])
+        yield from _bounded_deltas(
+            (chunk.content if isinstance(chunk.content, str) else chunk.text for chunk in chunks),
+            self._max_response_characters,
+        )
 
 
 class OpenAIProvider:
@@ -155,6 +193,17 @@ class OpenAIProvider:
             store=False,
         )
         return _enforce_response_limit(str(response.output_text), self._max_response_characters)
+
+    def stream_text(self, prompt: str) -> Iterator[str]:
+        with self._client.responses.stream(
+            model=self._model, input=prompt, max_output_tokens=self._max_output_tokens, store=False
+        ) as stream:
+            yield from _bounded_deltas(
+                (event.delta for event in stream if event.type == "response.output_text.delta"),
+                self._max_response_characters,
+            )
+            if stream.get_final_response().status != "completed":
+                raise ProviderRequestError("The model did not complete its response.")
 
 
 class AnthropicProvider:
@@ -194,6 +243,14 @@ class AnthropicProvider:
             str(block.text) for block in response.content if getattr(block, "type", None) == "text"
         )
         return _enforce_response_limit(text, self._max_response_characters)
+
+    def stream_text(self, prompt: str) -> Iterator[str]:
+        with self._client.messages.stream(
+            model=self._model,
+            max_tokens=self._max_output_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            yield from _bounded_deltas(stream.text_stream, self._max_response_characters)
 
 
 def create_provider(kind: ProviderKind, api_key: str, model: str) -> TextProvider:
