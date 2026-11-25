@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
+from threading import Lock
 from typing import Any, ParamSpec, TypeVar, cast
 
 from sparkdocs.mcp_workspace import DocumentWorkspace
+from sparkdocs.retrieval import FastEmbedDense, FastEmbedReranker
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -37,30 +40,36 @@ def create_server(workspace: DocumentWorkspace) -> Any:
     )
 
     tool = _tool_decorator(server)
+    workspace_lock = Lock()
+
+    def run_workspace(operation: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        # Keep workspace operations serialized even if the client cancels a running call.
+        with workspace_lock:
+            return operation(*args, **kwargs)
 
     @tool
-    def ingest_document(relative_path: str) -> dict[str, object]:
+    async def ingest_document(relative_path: str) -> dict[str, object]:
         """Validate and index one PDF, DOCX, or PPTX below the configured root."""
 
-        return asdict(workspace.ingest(relative_path))
+        return asdict(await asyncio.to_thread(run_workspace, workspace.ingest, relative_path))
 
     @tool
-    def search_document(question: str) -> dict[str, object]:
+    async def search_document(question: str) -> dict[str, object]:
         """Return bounded local evidence for a question; this does not generate an answer."""
 
-        return workspace.search(question)
+        return await asyncio.to_thread(run_workspace, workspace.search, question)
 
     @tool
-    def document_status() -> dict[str, object]:
+    async def document_status() -> dict[str, object]:
         """Report whether an in-memory document is loaded and its bounded metadata."""
 
-        return asdict(workspace.status())
+        return asdict(await asyncio.to_thread(run_workspace, workspace.status))
 
     @tool
-    def clear_document() -> dict[str, object]:
+    async def clear_document() -> dict[str, object]:
         """Discard the application-owned in-memory document and index."""
 
-        return asdict(workspace.clear())
+        return asdict(await asyncio.to_thread(run_workspace, workspace.clear))
 
     return server
 
@@ -73,8 +82,17 @@ def main() -> None:
         type=Path,
         help="Existing directory containing documents the MCP process may read.",
     )
+    parser.add_argument(
+        "--warm-models", action="store_true", help="Load retrieval models before accepting calls."
+    )
     args = parser.parse_args()
-    create_server(DocumentWorkspace(args.allowed_root)).run(transport="stdio")
+    workspace = DocumentWorkspace(args.allowed_root)
+    if args.warm_models:
+        embedder, reranker = FastEmbedDense(), FastEmbedReranker()
+        workspace = DocumentWorkspace(
+            args.allowed_root, embedder_factory=lambda: embedder, reranker_factory=lambda: reranker
+        )
+    create_server(workspace).run(transport="stdio")
 
 
 if __name__ == "__main__":
